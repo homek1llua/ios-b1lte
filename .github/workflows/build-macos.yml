@@ -1,0 +1,55 @@
+name: Build ios-b1lte (macOS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number (e.g. 0001)'
+        required: true
+        default: '0001'
+      metal_branch:
+        description: 'Metal branch name'
+        required: true
+        default: 'b2l-metal-v1'
+
+jobs:
+  build:
+    runs-on: macos-14  # Apple Silicon; use macos-13 for Intel if needed
+    timeout-minutes: 360
+    env:
+      # Configure these as repository secrets
+      IPSW_PATH: ${{ secrets.IPSW_PATH }}
+      KDK_PATH: ${{ secrets.KDK_PATH }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install prerequisites
+        run: |
+          brew install python3 llvm adb
+          python3 -m pip install --upgrade pip
+
+      - name: Restore .env
+        run: |
+          cp .env.example .env
+          # TODO: populate paths from secrets / cached artifacts
+
+      - name: Fetch XNU
+        run: bash scripts/fetch-xnu.sh
+
+      - name: Prepare XNU
+        run: bash scripts/prepare-xnu.sh
+
+      - name: Build EFI / XnuLoader
+        run: bash scripts/build-efi.sh
+
+      - name: Build kernel + BOOT image
+        run: bash tools/b1l/b1l-build.sh ${{ github.event.inputs.build_number }} ${{ github.event.inputs.metal_branch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-b1lte-images
+          path: |
+            tools/flash-kit/images/*.img
+          if-no-files-found: warn
