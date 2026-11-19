@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14  # Apple Silicon; use macos-13 for Intel if needed
+    runs-on: macos-13  # Intel macOS (change to macos-14/macos-15 if available)
     timeout-minutes: 360
     env:
       # Configure these as repository secrets
