@@ -21,7 +21,6 @@
   UefiDriverEntryPoint
   UefiBootServicesTableLib
   DebugLib
-  IoLib
   TimerLib
 
 [Protocols]

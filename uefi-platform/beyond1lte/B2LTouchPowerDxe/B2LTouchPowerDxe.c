@@ -14,7 +14,6 @@
  */
 #include <Uefi.h>
 #include <Library/DebugLib.h>
-#include <Library/IoLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/EFISpeedy.h>
@@ -52,10 +51,12 @@ B2LTouchPowerEntry (
   EFI_HSI2C_PROTOCOL          *HsI2c     = NULL;
   UINT8                        Before19, Before27;
 
+  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: start\n"));
   gBS->LocateProtocol (&gEfiSpeedyProtocolGuid, NULL, (VOID **)&Speedy);
   Before19 = ReadLdo (Speedy, LDO_DVDD);
   Before27 = ReadLdo (Speedy, LDO_AVDD);
 
+  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: ldo19=0x%02x ldo27=0x%02x before\n", Before19, Before27));
   Status = gBS->LocateProtocol (&gEfiPmicRegulatorProtocolGuid, NULL, (VOID **)&Regulator);
   if (!EFI_ERROR (Status)) {
     Dvdd = Regulator->SetLdo (ID_S2MPS19, LDO_DVDD, S2MPS_MODE_NORMAL, TRUE);
@@ -64,19 +65,13 @@ B2LTouchPowerEntry (
     MicroSecondDelay (10000);
   }
 
+  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: ldo19 %r ldo27 %r, now 0x%02x 0x%02x; hsi2c10 init next\n",
+          Dvdd, Avdd, ReadLdo (Speedy, LDO_DVDD), ReadLdo (Speedy, LDO_AVDD)));
   Status = gBS->LocateProtocol (&gEfiHsI2cProtocolGuid, NULL, (VOID **)&HsI2c);
   if (!EFI_ERROR (Status)) {
     Init = HsI2c->InitBus (TOUCH_BUS);
   }
-
-  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: ldo19 0x%02x->0x%02x %r, ldo27 0x%02x->0x%02x %r\n",
-          Before19, ReadLdo (Speedy, LDO_DVDD), Dvdd, Before27, ReadLdo (Speedy, LDO_AVDD), Avdd));
-  if (!EFI_ERROR (Init)) {
-    DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: hsi2c10 init %r fs1=0x%x fs2=0x%x ctrl=0x%x\n", Init,
-            MmioRead32 (TOUCH_HSI2C_BASE + 0x60), MmioRead32 (TOUCH_HSI2C_BASE + 0x64), MmioRead32 (TOUCH_HSI2C_BASE)));
-  } else {
-    DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: hsi2c10 init %r\n", Init));
-  }
+  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: hsi2c10 init %r\n", Init));
 
   // sec_ts needs about 70 ms after power-on before its application firmware answers.
   MicroSecondDelay (100000);
