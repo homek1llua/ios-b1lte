@@ -302,6 +302,7 @@ STATIC EFI_STATUS B2lBootXnu(EFI_HANDLE ImageHandle)
         else Print(L"B2L: BOOT UFS device path unrecognized; native storage will remain unavailable.\r\n");
     }
     else if (Status == EFI_NOT_FOUND || Status == EFI_UNSUPPORTED) {
+        Print(L"B2L: BOOT payload: %r; trying \\EFI\\B2L\\kernel on the loader's volume\r\n", Status);
         Status = OpenRoot(ImageHandle, &Root);
         if (!EFI_ERROR(Status))
             Status = ReadFile(Root, L"\\EFI\\B2L\\kernel", B2L_MAX_KERNEL, &Kernel, &KernelSize);

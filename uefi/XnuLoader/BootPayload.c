@@ -43,6 +43,7 @@ EFI_STATUS B2lLoadBootPayload(VOID **Kernel, UINTN *KernelSize, UINT8 Seed[B2L_B
   Status = gBS->LocateHandleBuffer(ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &Count, &Handles);
   if (EFI_ERROR(Status)) return Status;
   Status = EFI_NOT_FOUND;
+  UINTN Gpt = 0, BootNamed = 0;
   for (UINTN Index = 0; Index < Count; Index++) {
     EFI_BLOCK_IO_PROTOCOL *Block;
     EFI_DISK_IO_PROTOCOL *Disk;
@@ -56,30 +57,39 @@ EFI_STATUS B2lLoadBootPayload(VOID **Kernel, UINTN *KernelSize, UINT8 Seed[B2L_B
         !Block->Media->MediaPresent || !Block->Media->LogicalPartition ||
         EFI_ERROR(gBS->HandleProtocol(Handles[Index], &gEfiDiskIoProtocolGuid, (VOID **)&Disk)) ||
         EFI_ERROR(gBS->HandleProtocol(Handles[Index], &gEfiPartitionInfoProtocolGuid, (VOID **)&Partition)) ||
-        Partition->Type != PARTITION_TYPE_GPT ||
-        (CompareMem(Partition->Info.Gpt.PartitionName, L"BOOT", sizeof(L"BOOT")) != 0 &&
-         CompareMem(Partition->Info.Gpt.PartitionName, L"boot", sizeof(L"boot")) != 0)) continue;
+        Partition->Type != PARTITION_TYPE_GPT) continue;
+    Gpt++;
+    if (CompareMem(Partition->Info.Gpt.PartitionName, L"BOOT", sizeof(L"BOOT")) != 0 &&
+        CompareMem(Partition->Info.Gpt.PartitionName, L"boot", sizeof(L"boot")) != 0) continue;
+    BootNamed++;
+    Print(L"B2L: BOOT candidate %u: block %u bytes, last LBA %lu\r\n", (UINT32)BootNamed,
+          Block->Media->BlockSize, Block->Media->LastBlock);
     // Reject overflow before converting LastBlock into a byte capacity.
     if (Block->Media->BlockSize == 0 || Block->Media->LastBlock == MAX_UINT64 ||
         Block->Media->LastBlock + 1 > MAX_UINT64 / Block->Media->BlockSize) continue;
     Capacity = (Block->Media->LastBlock + 1) * Block->Media->BlockSize;
     MediaId = Block->Media->MediaId;
     ReadStatus = Disk->ReadDisk(Disk, MediaId, 0, sizeof(Header), Header);
-    if (EFI_ERROR(ReadStatus) || CompareMem(Header, "ANDROID!", 8) != 0) continue;
+    if (EFI_ERROR(ReadStatus)) { Print(L"B2L:   header read failed: %r\r\n", ReadStatus); continue; }
+    if (CompareMem(Header, "ANDROID!", 8) != 0) { Print(L"B2L:   no ANDROID! header\r\n"); continue; }
     Page = Le32(Header + 36);
     // First recognize only a well-bounded Android header before probing payload.
     if (Le32(Header + 40) != 1 || Page < 2048 || Page > 65536 || (Page & (Page - 1)) != 0 ||
-        Le32(Header + 16) != 0 || Le32(Header + 24) != 0) continue;
+        Le32(Header + 16) != 0 || Le32(Header + 24) != 0) {
+      Print(L"B2L:   header rejected: version %u page %u ramdisk %u second %u\r\n",
+            Le32(Header + 40), Page, Le32(Header + 16), Le32(Header + 24));
+      continue;
+    }
     Offset = Page + (((UINT64)Le32(Header + 8) + Page - 1) & ~((UINT64)Page - 1));
-    if (Offset > Capacity || sizeof(Payload) > Capacity - Offset) continue;
+    if (Offset > Capacity || sizeof(Payload) > Capacity - Offset) { Print(L"B2L:   trailer offset %lu beyond %lu\r\n", Offset, Capacity); continue; }
     ReadStatus = Disk->ReadDisk(Disk, MediaId, Offset, sizeof(Payload), Payload);
-    if (EFI_ERROR(ReadStatus)) continue;
+    if (EFI_ERROR(ReadStatus)) { Print(L"B2L:   trailer read at %lu failed: %r\r\n", Offset, ReadStatus); continue; }
     if (CompareMem(Payload, "B2LXNU01", 8) == 0) {
       Print(L"B2L: legacy BOOT payload has only 64 seed bytes; repackage B2LXNU02 with 256 bytes.\r\n");
       Status = EFI_COMPROMISED_DATA;
       break;
     }
-    if (CompareMem(Payload, "B2LXNU02", 8) != 0) continue;
+    if (CompareMem(Payload, "B2LXNU02", 8) != 0) { Print(L"B2L:   no B2LXNU02 at offset %lu\r\n", Offset); continue; }
     // Once our magic is present, corruption must not silently select another OS.
     Status = EFI_COMPROMISED_DATA;
     KernelOffset = Le64(Payload + 24);
@@ -93,7 +103,7 @@ EFI_STATUS B2lLoadBootPayload(VOID **Kernel, UINTN *KernelSize, UINT8 Seed[B2L_B
     Buffer = AllocatePool((UINTN)Length);
     if (Buffer == NULL) { Status = EFI_OUT_OF_RESOURCES; break; }
     ReadStatus = Disk->ReadDisk(Disk, MediaId, Offset + KernelOffset, (UINTN)Length, Buffer);
-    if (EFI_ERROR(ReadStatus)) { FreePool(Buffer); Status = ReadStatus; break; }
+    if (EFI_ERROR(ReadStatus)) { Print(L"B2L:   kernel read (%lu bytes) failed: %r\r\n", Length, ReadStatus); FreePool(Buffer); Status = ReadStatus; break; }
     if (Le32(Buffer) != 0xfeedfacf || Le32((UINT8 *)Buffer + 4) != 0x0100000c) {
       FreePool(Buffer);
       break;
@@ -112,6 +122,9 @@ EFI_STATUS B2lLoadBootPayload(VOID **Kernel, UINTN *KernelSize, UINT8 Seed[B2L_B
     Status = EFI_SUCCESS;
     break;
   }
+  if (Status == EFI_NOT_FOUND)
+    Print(L"B2L: no BOOT payload: %u block devices, %u GPT partitions, %u named BOOT\r\n",
+          (UINT32)Count, (UINT32)Gpt, (UINT32)BootNamed);
   FreePool(Handles);
   return Status;
 }
