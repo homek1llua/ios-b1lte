@@ -15,12 +15,16 @@
 #include <Uefi.h>
 #include <Library/DebugLib.h>
 #include <Library/TimerLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/EFISpeedy.h>
 #include <Protocol/EFIHsI2c.h>
 #include <Protocol/EFIPmicRegulator.h>
 
 #define TOUCH_BUS        10
+// PERIC0 sysreg page holding the USI mode registers (USI_HSI2C10 at +0x1C). Upstream
+// UsiDxe writes it from InitBus, but nothing maps it; the owner's touch driver did.
+#define PERIC0_SYSREG    0x10421000
 #define TOUCH_HSI2C_BASE 0x104B0000
 #define PMIC_SPEEDY_BUS  0
 #define PMIC_PM_ADDR     0x01
@@ -67,7 +71,13 @@ B2LTouchPowerEntry (
 
   DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: ldo19 %r ldo27 %r, now 0x%02x 0x%02x; hsi2c10 init next\n",
           Dvdd, Avdd, ReadLdo (Speedy, LDO_DVDD), ReadLdo (Speedy, LDO_AVDD)));
-  Status = gBS->LocateProtocol (&gEfiHsI2cProtocolGuid, NULL, (VOID **)&HsI2c);
+  Status = gDS->AddMemorySpace (EfiGcdMemoryTypeMemoryMappedIo, PERIC0_SYSREG, SIZE_4KB,
+                                EFI_MEMORY_UC);
+  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: map peric0 sysreg add %r\n", Status));
+  Status = gDS->SetMemorySpaceAttributes (PERIC0_SYSREG, SIZE_4KB, EFI_MEMORY_UC);
+  DEBUG ((EFI_D_ERROR, "B2L TOUCH PWR: map peric0 sysreg attr %r\n", Status));
+  Init = EFI_NOT_READY;
+  Status = EFI_ERROR (Status) ? Status : gBS->LocateProtocol (&gEfiHsI2cProtocolGuid, NULL, (VOID **)&HsI2c);
   if (!EFI_ERROR (Status)) {
     Init = HsI2c->InitBus (TOUCH_BUS);
   }
