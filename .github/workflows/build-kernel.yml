@@ -1,0 +1,128 @@
+name: Build kernel + BOOT image
+
+# XNU kernel (macOS + KDK from the private release) and the full S10 BOOT image
+# (firmware + XnuLoader + kernel). Needs the B1L_PRIVATE_TOKEN secret with
+# read access to homek1llua/b1l-private.
+on:
+  workflow_dispatch:
+  push:
+    branches: [kernel-ci]
+
+jobs:
+  kernel:
+    runs-on: macos-latest
+    timeout-minutes: 180
+    env:
+      KDK_REPO: homek1llua/b1l-private
+      KDK_TAG: kdk-26.5-25F71
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          sw_vers; xcodebuild -version; xcrun --show-sdk-path; xcrun --sdk iphoneos --show-sdk-version
+          df -h "$RUNNER_TEMP" | tail -1
+
+      - name: Download KDK
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
+        run: |
+          [[ -n "$GH_TOKEN" ]] || { echo "B1L_PRIVATE_TOKEN secret is missing"; exit 1; }
+          gh release download "$KDK_TAG" -R "$KDK_REPO" -p '*.dmg' -D "$RUNNER_TEMP"
+          ls -l "$RUNNER_TEMP"/*.dmg
+
+      - name: Install KDK
+        run: echo "KDKROOT=$(bash scripts/install-kdk.sh "$RUNNER_TEMP"/*.dmg)" >> "$GITHUB_ENV"
+
+      - name: Fetch XNU
+        run: bash scripts/fetch-xnu.sh
+
+      - name: Fetch IPSW launch cache
+        run: |
+          python3 -m pip install --break-system-packages remotezip cryptography
+          bash scripts/fetch-ipsw-launch-cache.sh "$RUNNER_TEMP/launchd.plist"
+
+      - name: Prepare XNU
+        env:
+          B2L_LAUNCH_CACHE: ${{ runner.temp }}/launchd.plist
+        run: bash scripts/prepare-xnu.sh
+
+      - name: Build dependencies
+        env:
+          B2L_DEPSROOT: ${{ runner.temp }}/deps
+        run: bash scripts/build-deps.sh "$RUNNER_TEMP/deps-work"
+
+      - name: Build kernel
+        env:
+          B2L_DEPSROOT: ${{ runner.temp }}/deps
+          BUILD_JOBS: 3
+        run: bash scripts/build-kernel.sh CWARNFLAGS=-w CXXWARNFLAGS=-w
+
+      - name: Collect kernel
+        run: |
+          k="$(find out/xnu -name 'mach.development.b2l' -type f | head -1)"
+          [[ -n "$k" ]] || { echo "kernel not found"; find out/xnu -maxdepth 3; exit 1; }
+          mkdir -p out/kernel && cp "$k" out/kernel/ && shasum -a 256 out/kernel/*
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ github.run_number }}
+          path: out/kernel/mach.development.b2l
+
+  boot-image:
+    needs: kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download kernel
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-${{ github.run_number }}
+          path: out/kernel
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang lld llvm rsync uuid-dev
+          clang_bin="$RUNNER_TEMP/clang-bin"; mkdir -p "$clang_bin"
+          for t in clang llvm-lib llvm-rc lld-link llvm-objcopy; do
+            p="$(command -v "$t" || ls /usr/lib/llvm-*/bin/"$t" | sort -V | tail -1)"
+            ln -sf "$p" "$clang_bin/$t"
+          done
+          echo "CLANG_BIN=$clang_bin" >> "$GITHUB_ENV"
+
+      - name: Prepare Mu-Silicium workspace
+        run: echo "WORKSPACE=$(bash scripts/setup-silicium-workspace.sh "$RUNNER_TEMP/silicium")" >> "$GITHUB_ENV"
+
+      - name: Build firmware + XnuLoader
+        env:
+          B2L_BOARD: beyond1lte
+          BUILD_JOBS: 4
+        run: bash scripts/build-boot-firmware.sh
+
+      - name: Package BOOT image
+        env:
+          B2L_BOARD: beyond1lte
+        run: |
+          python3 scripts/package-boot.py --mu "$WORKSPACE" \
+            --firmware "$WORKSPACE/Build/beyond1ltePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd" \
+            --loader "$WORKSPACE/Build/B2LXnu/RELEASE_CLANGPDB/AARCH64/XnuLoader.efi" \
+            --kernel out/kernel/mach.development.b2l \
+            --output-dir out/b1l-boot \
+            --max-image-bytes 57671680 --boot-partition-bytes 57671680 \
+            --clang "$CLANG_BIN/clang" --objcopy "$CLANG_BIN/llvm-objcopy"
+          python3 scripts/package-boot.py --verify out/b1l-boot/boot.img
+          sha256sum out/b1l-boot/boot.img
+
+      - name: Upload BOOT image
+        uses: actions/upload-artifact@v4
+        with:
+          name: b1l-boot-${{ github.run_number }}
+          path: |
+            out/b1l-boot/boot.img
+            out/b1l-boot/manifest.json
