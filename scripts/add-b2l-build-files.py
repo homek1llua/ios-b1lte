@@ -15,6 +15,7 @@ ENTRIES = {
         "bsd/dev/b2l_hakios_net.c\t\t\toptional b2l",                     # Wi-Fi: en0 (B1L-0152)
         "bsd/dev/b2l_hakios_sta.c\t\t\toptional b2l",                     # Wi-Fi: station
         "bsd/dev/b2l_hakios_apple80211.c\t\toptional b2l",                # Wi-Fi: wifid ioctls
+        "bsd/dev/b2l_wpa.c\t\t\toptional b2l",                            # Wi-Fi: WPA2-PSK handshake (B1L-0163)
     ],
     "iokit/conf/files": [
         "iokit/Kernel/arm/B2LMaliService.cpp optional iokitcpp b2l",       # 0104
