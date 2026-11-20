@@ -38,7 +38,14 @@ jobs:
       - name: Fetch XNU
         run: bash scripts/fetch-xnu.sh
 
+      - name: Fetch IPSW launch cache
+        run: |
+          python3 -m pip install --break-system-packages remotezip cryptography
+          bash scripts/fetch-ipsw-launch-cache.sh "$RUNNER_TEMP/launchd.plist"
+
       - name: Prepare XNU
+        env:
+          B2L_LAUNCH_CACHE: ${{ runner.temp }}/launchd.plist
         run: bash scripts/prepare-xnu.sh
 
       - name: Build EFI / XnuLoader
