@@ -31,12 +31,18 @@ make -C "$xnu_path" SDKROOT=macosx KDKROOT="$KDKROOT" \
   OBJROOT="$work/hdr-obj" SYMROOT="$work/hdr-sym" DSTROOT="$B2L_DEPSROOT" installhdrs
 
 echo "== libfirehose_kernel"
+# Kernel-mode sources still include TargetConditionals.h; take it from the KDK
+# or the macOS SDK's Kernel.framework, after the B2L and KDK private headers.
+sdk_kernel_headers="$(xcrun --sdk macosx --show-sdk-path)/System/Library/Frameworks/Kernel.framework/Headers"
+for d in "$KDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/Headers" "$sdk_kernel_headers"; do
+  [[ -f "$d/TargetConditionals.h" ]] && echo "TargetConditionals.h: $d"
+done
 fetch libdispatch 701f4d1a24ae9c6863901bbbb22624b7d1b87321 "$work/libdispatch"
 xcodebuild -project "$work/libdispatch/libdispatch.xcodeproj" -target libfirehose_kernel \
   -configuration Release -sdk iphoneos -arch arm64 \
   OBJROOT="$work/firehose-obj" SYMROOT="$work/firehose-sym" DSTROOT="$B2L_DEPSROOT" CODE_SIGNING_ALLOWED=NO \
   OTHER_CFLAGS='$(inherited) -mcpu=generic -march=armv8-a+crypto' \
-  HEADER_SEARCH_PATHS="$B2L_DEPSROOT/usr/local/include/kernel $B2L_DEPSROOT/System/Library/Frameworks/Kernel.framework/PrivateHeaders $B2L_DEPSROOT/System/Library/Frameworks/Kernel.framework/Headers $work/libdispatch $B2L_DEPSROOT/usr/local/include/os $B2L_DEPSROOT/usr/local/include/firehose $KDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders" \
+  HEADER_SEARCH_PATHS="$B2L_DEPSROOT/usr/local/include/kernel $B2L_DEPSROOT/System/Library/Frameworks/Kernel.framework/PrivateHeaders $B2L_DEPSROOT/System/Library/Frameworks/Kernel.framework/Headers $work/libdispatch $B2L_DEPSROOT/usr/local/include/os $B2L_DEPSROOT/usr/local/include/firehose $KDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders $KDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/Headers $sdk_kernel_headers" \
   install
 lib="$B2L_DEPSROOT/usr/local/lib/kernel"
 [[ -f "$lib/libfirehose_kernel.a" ]] || cp "$lib/liblibfirehose_kernel.a" "$lib/libfirehose_kernel.a"
