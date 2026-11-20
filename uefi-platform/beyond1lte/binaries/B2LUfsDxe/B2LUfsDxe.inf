@@ -1,6 +1,9 @@
 ## @file
-#  UfsDxe taken unchanged from the owner's working beyond2ltePkg firmware (BOOT dump of
-#  2026-11-20, Exynos 9820). SHA-256 of UfsDxe.efi: 673e2feb3ef39b403c5c1e7272a256b9f4a35d6f07c2b42a407ae23d8eadac1b
+#  UfsDxe from the owner's working beyond2ltePkg firmware (BOOT dump of
+#  2026-11-20, Exynos 9820), with its five GPIO bank IDs moved from the A = 0 to the
+#  upstream BANK_ID_A = 1 numbering by scripts/patch-ufs-gpio-banks.py.
+#  SHA-256 of the original UfsDxe.efi: 673e2feb3ef39b403c5c1e7272a256b9f4a35d6f07c2b42a407ae23d8eadac1b
+#  SHA-256 of the patched UfsDxe.efi: 8ed73632bb6d1f1884a307e18ee1984e4a0689f0d43ea297fca735dc565f972e
 ##
 [Defines]
   INF_VERSION    = 0x0001001B
