@@ -58,7 +58,7 @@ jobs:
             --clang "$CLANG_BIN/clang" --objcopy "$CLANG_BIN/llvm-objcopy"
           cp "$WORKSPACE/Build/beyond1ltePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd" out/b1l-fw/
           cp "$WORKSPACE/Build/B2LXnu/RELEASE_CLANGPDB/AARCH64/XnuLoader.efi" out/b1l-fw/
-          sha256sum out/b1l-fw/*
+          sha256sum out/b1l-fw/*.img out/b1l-fw/*.fd out/b1l-fw/*.efi out/b1l-fw/*.json
 
       - name: Upload
         uses: actions/upload-artifact@v4
