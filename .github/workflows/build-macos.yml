@@ -26,8 +26,10 @@ jobs:
 
       - name: Install prerequisites
         run: |
-          brew install python3 llvm adb
+          brew install python3 llvm
+          brew install --cask android-platform-tools
           python3 -m pip install --upgrade pip
+
 
       - name: Restore .env
         run: |
