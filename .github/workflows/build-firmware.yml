@@ -1,0 +1,71 @@
+name: Build S10 firmware + XnuLoader
+
+# Builds the Galaxy S10 (beyond1lte) UEFI firmware with the embedded XnuLoader
+# and packages a firmware-only BOOT image (no XNU payload yet). Linux is enough
+# for this part; the kernel still needs the macOS workflow and a KDK.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - uefi/**
+      - uefi-platform/**
+      - common/**
+      - scripts/build-efi.sh
+      - scripts/build-boot-firmware.sh
+      - scripts/prepare-boot-firmware.py
+      - scripts/package-boot.py
+      - scripts/make-b1l-platform.sh
+      - scripts/setup-silicium-workspace.sh
+      - .github/workflows/build-firmware.yml
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang lld llvm rsync uuid-dev
+          clang_bin="$RUNNER_TEMP/clang-bin"; mkdir -p "$clang_bin"
+          for t in clang llvm-lib llvm-rc lld-link llvm-objcopy; do
+            p="$(command -v "$t" || ls /usr/lib/llvm-*/bin/"$t" | sort -V | tail -1)"
+            ln -sf "$p" "$clang_bin/$t"
+          done
+          echo "CLANG_BIN=$clang_bin" >> "$GITHUB_ENV"
+
+      - name: Prepare Mu-Silicium workspace
+        run: echo "WORKSPACE=$(bash scripts/setup-silicium-workspace.sh "$RUNNER_TEMP/silicium")" >> "$GITHUB_ENV"
+
+      - name: Build firmware + XnuLoader
+        env:
+          B2L_BOARD: beyond1lte
+          BUILD_JOBS: 4
+        run: bash scripts/build-boot-firmware.sh
+
+      - name: Package firmware-only BOOT image
+        env:
+          B2L_BOARD: beyond1lte
+        run: |
+          python3 scripts/package-boot.py --firmware-only --mu "$WORKSPACE" \
+            --firmware "$WORKSPACE/Build/beyond1ltePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd" \
+            --loader "$WORKSPACE/Build/B2LXnu/RELEASE_CLANGPDB/AARCH64/XnuLoader.efi" \
+            --output-dir out/b1l-fw \
+            --max-image-bytes 57671680 --boot-partition-bytes 57671680 \
+            --clang "$CLANG_BIN/clang" --objcopy "$CLANG_BIN/llvm-objcopy"
+          cp "$WORKSPACE/Build/beyond1ltePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd" out/b1l-fw/
+          cp "$WORKSPACE/Build/B2LXnu/RELEASE_CLANGPDB/AARCH64/XnuLoader.efi" out/b1l-fw/
+          sha256sum out/b1l-fw/*.img out/b1l-fw/*.fd out/b1l-fw/*.efi out/b1l-fw/*.json
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b1l-firmware-${{ github.run_number }}
+          path: |
+            out/b1l-fw/boot.img
+            out/b1l-fw/manifest.json
+            out/b1l-fw/SILICIUM_UEFI.fd
+            out/b1l-fw/XnuLoader.efi

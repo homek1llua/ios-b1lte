@@ -255,8 +255,10 @@ def main():
     dsc = dsc_path.read_text()
     pcd = "gPcBdsPkgTokenSpaceGuid.PcdShellFile|{ " + ", ".join(f"0x{b:02X}" for b in guid.bytes_le) + " }"
     dsc, n = re.subn(r"gPcBdsPkgTokenSpaceGuid\.PcdShellFile\|[^\r\n]*", pcd, dsc)
-    if n != 1:
-        p.error(f"expected exactly one PcdShellFile, found {n}")
+    # Newer Mu-Silicium trees no longer declare PcdShellFile. The boot hook
+    # below loads the loader by its GUID, so the PCD is only set when present.
+    if n > 1:
+        p.error(f"expected at most one PcdShellFile, found {n}")
     component = f"{package}/B2LXnuEmbedded/B2LXnuEmbedded.inf"
     if component not in dsc:
         dsc += f"\n[Components]\n  {component}\n"
