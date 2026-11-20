@@ -171,20 +171,25 @@ def main():
     p.add_argument("--clang", default=shutil.which("clang"))
     p.add_argument("--objcopy", default=shutil.which("llvm-objcopy") or "/opt/homebrew/opt/llvm/bin/llvm-objcopy")
     p.add_argument("--verify", type=Path, help="Only validate an existing packaged image")
+    p.add_argument("--firmware-only", action="store_true",
+                   help="Bring-up image without an XNU payload: firmware and loader only; the loader stops with a message")
     a = p.parse_args()
     if a.verify:
         print(json.dumps(check_boot(a.verify), indent=2))
         return
-    for name in ("mu", "firmware", "kernel", "loader", "output_dir", "max_image_bytes"):
+    required = ("mu", "firmware", "loader", "output_dir", "max_image_bytes")
+    if not a.firmware_only:
+        required += ("kernel",)
+    for name in required:
         if getattr(a, name) is None:
             p.error(f"--{name.replace('_', '-')} is required when packaging")
     if a.max_image_bytes <= 0:
         p.error("size ceiling must be positive")
     fd = a.firmware.read_bytes()
-    kernel = a.kernel.read_bytes()
+    kernel = b"" if a.firmware_only else a.kernel.read_bytes()
     if len(fd) != FD_SIZE:
         p.error("firmware FD must be exactly 4 MiB; stack/framebuffer layout cannot be enlarged")
-    if len(kernel) < 4096 or struct.unpack_from("<III", kernel) != (0xfeedfacf, 0x0100000c, 0):
+    if not a.firmware_only and (len(kernel) < 4096 or struct.unpack_from("<III", kernel) != (0xfeedfacf, 0x0100000c, 0)):
         p.error("kernel must be a thin plain ARM64 Mach-O image")
     if not a.loader.is_file() or a.loader.read_bytes()[:2] != b"MZ":
         p.error("--loader must be the built ARM64 EFI application")
@@ -221,7 +226,7 @@ def main():
     if len(boot) != expected_trailer:
         p.error("unexpected Android BOOT component padding")
     wifi_mac = read_wifi_mac(a.wifi_mac_file) if a.wifi_mac_file else None
-    header = make_payload_header(len(kernel), wifi_mac)
+    header = b"" if a.firmware_only else make_payload_header(len(kernel), wifi_mac)
     final_size = len(boot) + len(header) + len(kernel)
     limit = min(a.max_image_bytes, a.boot_partition_bytes or a.max_image_bytes)
     if final_size > limit:
@@ -230,14 +235,14 @@ def main():
     with image.open("ab") as out:
         out.write(header)
         out.write(kernel)
-    layout = check_boot(image)
+    layout = {"firmware_only": True, "image_bytes": image.stat().st_size} if a.firmware_only else check_boot(image)
     manifest = {
         "format": "beyond2lte-xnu-boot-v2", "device": board, "model": b2l_board.model(board),
         "status": "offline-built; not device-boot-verified", "layout": layout,
         "firmware_base": hex(FD_BASE), "firmware_bytes": FD_SIZE,
         "confirmed_target_boot_partition_bytes": a.boot_partition_bytes,
         "offline_size_ceiling_bytes": a.max_image_bytes,
-        "boot_sha256": sha256(image), "kernel_sha256": sha256(a.kernel),
+        "boot_sha256": sha256(image), "kernel_sha256": None if a.firmware_only else sha256(a.kernel),
         "firmware_sha256": sha256(a.firmware), "loader_sha256": sha256(a.loader),
         "embedded_loader_verified": True,
         "storage_writes_performed": False,

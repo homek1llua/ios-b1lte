@@ -16,7 +16,10 @@ if [[ "${B2L_ENABLE_TOUCH:-0}" == 1 ]]; then touch_options+=(--enable-touch); fi
 export PACKAGES_PATH="$WORKSPACE/Platforms/Samsung:$WORKSPACE/Common/Mu:$WORKSPACE/Common/Mu_OEM_Sample:$WORKSPACE/Silicon/Samsung:$WORKSPACE/Silicon/Silicium${PACKAGES_PATH:+:$PACKAGES_PATH}"
 # DSC build-time ACPI declarations remain external. Their firmware-volume
 # inclusion is disabled by the XNU profile; XNU uses an Apple device tree.
-export PACKAGES_PATH="$PACKAGES_PATH:$WORKSPACE/Silicium-ACPI:$WORKSPACE/Silicium-ACPI/Platforms/Samsung:$WORKSPACE/Silicium-ACPI/SoCs/Samsung"
+# Silicium-ACPI renamed SoCs/ to Silicon/; accept either layout.
+acpi_soc="$WORKSPACE/Silicium-ACPI/Silicon/Samsung"
+[[ -d "$acpi_soc" ]] || acpi_soc="$WORKSPACE/Silicium-ACPI/SoCs/Samsung"
+export PACKAGES_PATH="$PACKAGES_PATH:$WORKSPACE/Silicium-ACPI:$WORKSPACE/Silicium-ACPI/Platforms/Samsung:$acpi_soc"
 export DSC_PATH="${board}Pkg/${board}.dsc"
 exec "$repo_root/scripts/build-efi.sh" \
   -D FD_BASE=0xC9000000 -D FD_SIZE=0x400000 -D FD_BLOCKS=0x400 \
