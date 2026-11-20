@@ -5,7 +5,8 @@ from pathlib import Path
 from b2l_launch_cache import pad_binary_plist
 import argparse,hashlib,json,plistlib,subprocess,tempfile,importlib.util,struct
 r=Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True)
+p.add_argument('--launch-cache',type=Path,help='original /System/Library/xpc/launchd.plist (e.g. from scripts/fetch-ipsw-launch-cache.sh) instead of reading out/ipsw/ios26-userdata.hfs.img');a=p.parse_args()
 sdk=subprocess.check_output(['xcrun','--sdk','iphoneos','--show-sdk-path'],text=True).strip()
 with tempfile.TemporaryDirectory(prefix='b2l-app-bootstrap-') as td:
  binary=Path(td)/'b2l-system-app-bootstrap-v4'
@@ -20,14 +21,18 @@ with tempfile.TemporaryDirectory(prefix='b2l-app-bootstrap-') as td:
  job=plistlib.dumps({'Label':'dev.b2l.system-app-bootstrap-v4','ProgramArguments':['/usr/local/libexec/b2l-system-app-bootstrap-v4'],'RunAtLoad':True,'UserName':'root','ProcessType':'Background','LowPriorityIO':True,'StandardOutPath':'/private/var/log/b2l-system-app-bootstrap-v4.log','StandardErrorPath':'/private/var/log/b2l-system-app-bootstrap-v4.log'},fmt=plistlib.FMT_XML)
  # Read the exact source launch cache from the local prepared IPSW image.
  # Only the private generated header contains Apple cache data.
- spec=importlib.util.spec_from_file_location('hfsreader',r/'scripts/pull-b2l-unified-logs.py')
- m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
- reader=m.ImageReader(r/'out/ipsw/ios26-userdata.hfs.img');volume=m.Volume(reader)
- cache_path='/System/Library/xpc/launchd.plist';source=None
- for entry,full,_,_ in volume.selected((cache_path,)):
-  if full==cache_path:source=b''.join(m.Fork(volume,entry['fork_raw'],entry['id']).resolve(volume.overflow).content());break
- if source is None or not volume.unchanged():raise SystemExit('Missing/changed original launch cache')
- reader.close()
+ if a.launch_cache:
+  # Same file, taken straight from the IPSW's OS image (CI has no prepared userdata image).
+  source=a.launch_cache.read_bytes()
+ else:
+  spec=importlib.util.spec_from_file_location('hfsreader',r/'scripts/pull-b2l-unified-logs.py')
+  m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+  reader=m.ImageReader(r/'out/ipsw/ios26-userdata.hfs.img');volume=m.Volume(reader)
+  cache_path='/System/Library/xpc/launchd.plist';source=None
+  for entry,full,_,_ in volume.selected((cache_path,)):
+   if full==cache_path:source=b''.join(m.Fork(volume,entry['fork_raw'],entry['id']).resolve(volume.overflow).content());break
+  if source is None or not volume.unchanged():raise SystemExit('Missing/changed original launch cache')
+  reader.close()
  original=plistlib.loads(source);derived=plistlib.loads(source)
  job_path='/System/Library/LaunchDaemons/dev.b2l.system-app-bootstrap-v4.plist'
  if job_path in derived['LaunchDaemons']:raise SystemExit('Owned job already in source launch cache')

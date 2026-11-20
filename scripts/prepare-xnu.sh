@@ -67,19 +67,32 @@ python3 "$repo_root/scripts/apply-board-patches.py" "$xnu_path" \
   "$repo_root/patches/0057-b2l-scoped-coregraphics-backtrace.patch" \
   "$repo_root/patches/0058-b2l-owned-launch-cache.patch" \
   "$repo_root/patches/0059-b2l-typed-critical-exit.patch"
-# New files have separate provenance and are kept as an overlay.
+# New files have separate provenance and are kept as an overlay. A few overlay files
+# (e.g. iokit/Kernel/IOUserClient.cpp) are full replacements of upstream files that the
+# patches above already touched; those are tracked by the XNU checkout and are replaced.
+# An untracked file that differs is someone's local work: refuse unless FORCE_OVERLAY=1.
 while IFS= read -r -d '' source_file; do
   relative="${source_file#"$repo_root/xnu-overlay/"}"
   destination="$xnu_path/$relative"
-  if [[ -f "$destination" ]] && ! cmp -s "$source_file" "$destination"; then
+  [[ -f "$destination" ]] || continue
+  cmp -s "$source_file" "$destination" && continue
+  if git -C "$xnu_path" ls-files --error-unmatch -- "$relative" >/dev/null 2>&1; then
+    echo "Replacing upstream file with overlay: $relative"
+  elif [[ "${FORCE_OVERLAY:-0}" == 1 ]]; then
+    echo "FORCE_OVERLAY=1: overwriting local file: $relative" >&2
+  else
     echo "Refusing to replace a different local overlay file: $destination" >&2
+    echo "  (untracked in XNU; set FORCE_OVERLAY=1 to overwrite)" >&2
     exit 1
   fi
 done < <(find "$repo_root/xnu-overlay" -type f -print0)
 rsync -a "$repo_root/xnu-overlay/" "$xnu_path/"
 # The keyed PACGA (QARMA5/SipHash) is gone; historical patches 0006/0056 still list its sources in conf/files.
 perl -ni -e 'print unless m{b2l_pacga_(qarma5|siphash)}' "$xnu_path/bsd/conf/files" "$xnu_path/osfmk/conf/files"
-python3 "$repo_root/scripts/build-userspace-bootstrap.py" --output "$xnu_path/bsd/kern/b2l_userspace_payload.h"
+# B2L_LAUNCH_CACHE: launchd.plist from scripts/fetch-ipsw-launch-cache.sh, when there is no
+# local out/ipsw/ios26-userdata.hfs.img (CI).
+python3 "$repo_root/scripts/build-userspace-bootstrap.py" --output "$xnu_path/bsd/kern/b2l_userspace_payload.h" \
+  ${B2L_LAUNCH_CACHE:+--launch-cache "$B2L_LAUNCH_CACHE"}
 for source_file in "$repo_root/common/cache/"*; do
   destination="$xnu_path/bsd/kern/$(basename "$source_file")"
   if [[ -f "$destination" ]] && ! cmp -s "$source_file" "$destination"; then
