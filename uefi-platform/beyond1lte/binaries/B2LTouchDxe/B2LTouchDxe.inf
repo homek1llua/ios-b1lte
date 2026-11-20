@@ -1,0 +1,16 @@
+## @file
+#  B2LTouchDxe taken unchanged from the owner's working beyond2ltePkg firmware (BOOT dump
+#  of 2026-11-20, Exynos 9820). Powers the touch controller, sets up HSI2C10 and installs
+#  the touch diagnostic protocol the XnuLoader hands to the kernel ("b2l,touch-status").
+#  SHA-256 of B2LTouchDxe.efi: 775e3172a888b9ea1fe92c0115589376965f089f1d2fd37e3d2a489029313981
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LTouchDxe
+  FILE_GUID      = CD6A6A72-E001-54D2-BEAD-BF04F486F4C8
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|B2LTouchDxe.efi|*
+  DXE_DEPEX|B2LTouchDxe.depex|*

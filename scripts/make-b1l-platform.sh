@@ -30,7 +30,9 @@ PKG="$pkg" python3 - <<'PY'
 import os, re
 from pathlib import Path
 pkg = Path(os.environ['PKG'])
-swap = {}  # Samsung/keypad drivers stay upstream; only UFS comes from the owner's firmware
+# Samsung/keypad drivers stay upstream. Upstream HsI2cDxe has no 9820 HsI2cLib, so HSI2C
+# (and the touch driver after it) come from the owner's firmware.
+swap = {'SamsungPkg/Drivers/HsI2cDxe/HsI2cDxe.inf': 'B2LHsI2cDxe'}
 binf = lambda n: f'beyond1ltePkg/Binary/{n}/{n}.inf'
 storage = ('\n  # B2L storage stack\n'
            '  INF MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf\n'
@@ -40,7 +42,7 @@ storage = ('\n  # B2L storage stack\n'
            '  INF FatPkg/EnhancedFatDxe/Fat.inf\n')
 for inc in ('APRIORI.inc', 'DXE.inc'):
     path = pkg / 'Include' / inc; text = path.read_text()
-    if 'B2L storage stack' in text: continue
+    if 'B2LTouchDxe' in text: continue
     for old, new in swap.items():
         line = f'  INF {old}\n'
         if text.count(line) != 1: raise SystemExit(f'{inc}: expected one {old}')
@@ -50,7 +52,7 @@ for inc in ('APRIORI.inc', 'DXE.inc'):
     text = text.replace(anchor, anchor + storage)
     path.write_text(text)
 dsc = pkg / 'beyond1lte.dsc'; text = dsc.read_text()
-if 'B2LUfsDxe/B2LUfsDxe.inf' not in text:
+if 'B2LTouchDxe/B2LTouchDxe.inf' not in text:
     names = sorted(d.name for d in (pkg / 'Binary').iterdir() if (d / f'{d.name}.inf').is_file())
     text += '\n[Components]\n' + ''.join(f'  {binf(n)}\n' for n in names)
     dsc.write_text(text)

@@ -1,0 +1,18 @@
+## @file
+#  HsI2cDxe from the owner's working beyond2ltePkg firmware (BOOT dump of
+#  2026-11-20, Exynos 9820), with the SDA/SCL GPIO bank IDs of buses 4-10 moved from
+#  the A = 0 to the upstream BANK_ID_A = 1 numbering by scripts/patch-hsi2c-gpio-banks.py.
+#  Replaces upstream HsI2cDxe, which has no S5E9820 HsI2cLib and fails with Unsupported.
+#  SHA-256 of the original HsI2cDxe.efi: 4e17ad9ff55e6a9d65451b3b8ba9e8bd8e7186a7d2e95aa56d9b37ec7ddb64f3
+#  SHA-256 of the patched HsI2cDxe.efi: fab40f773e6000b83f14cbce73a63c8b7733f2907ff3ac395d4d8cfc4b6ff573
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LHsI2cDxe
+  FILE_GUID      = 506B3AD1-C4A0-5B84-A052-6C1F6E9F383B
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|HsI2cDxe.efi|*
+  DXE_DEPEX|HsI2cDxe.depex|*
