@@ -66,7 +66,14 @@ python3 "$repo_root/scripts/apply-board-patches.py" "$xnu_path" \
   "$repo_root/patches/0056-b2l-scalar-pacga-siphash.patch" \
   "$repo_root/patches/0057-b2l-scoped-coregraphics-backtrace.patch" \
   "$repo_root/patches/0058-b2l-owned-launch-cache.patch" \
-  "$repo_root/patches/0059-b2l-typed-critical-exit.patch"
+  "$repo_root/patches/0059-b2l-typed-critical-exit.patch" \
+  "$repo_root/patches/0100-b2l-installd-apfs-fstype.patch" \
+  "$repo_root/patches/0101-b2l-report-arm64e-host-subtype.patch" \
+  "$repo_root/patches/0102-b2l-hfs-decmpfs-zlib-stored.patch" \
+  "$repo_root/patches/0103-b2l-kernel-rename-excl.patch" \
+  "$repo_root/patches/0105-b2l-phys-cache-op-unowned-page.patch" \
+  "$repo_root/patches/0106-b2l-pmap-owned-ram-is-dram-and-ptoa.patch" \
+  "$repo_root/patches/0108-b2l-el0-cache-maintenance.patch"
 # New files have separate provenance and are kept as an overlay. A few overlay files
 # (e.g. iokit/Kernel/IOUserClient.cpp) are full replacements of upstream files that the
 # patches above already touched; those are tracked by the XNU checkout and are replaced.
@@ -87,6 +94,9 @@ while IFS= read -r -d '' source_file; do
   fi
 done < <(find "$repo_root/xnu-overlay" -type f -print0)
 rsync -a "$repo_root/xnu-overlay/" "$xnu_path/"
+# 0104/0107 are notes without hunk positions; this adds their entries and other
+# referenced overlay sources to conf/files.
+python3 "$repo_root/scripts/add-b2l-build-files.py" "$xnu_path"
 # The keyed PACGA (QARMA5/SipHash) is gone; historical patches 0006/0056 still list its sources in conf/files.
 perl -ni -e 'print unless m{b2l_pacga_(qarma5|siphash)}' "$xnu_path/bsd/conf/files" "$xnu_path/osfmk/conf/files"
 # B2L_LAUNCH_CACHE: launchd.plist from scripts/fetch-ipsw-launch-cache.sh, when there is no
