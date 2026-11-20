@@ -1,0 +1,33 @@
+## @file
+#  Powers the Galaxy S10 touch controller (S2MPS19 LDO19M/LDO27M) and sets up
+#  HSI2C10 so the XNU B2LInput driver finds it ready.
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LTouchPowerDxe
+  FILE_GUID      = 3C1B7E52-9D4A-4B6E-A1F3-6E2D8C5B0A47
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = B2LTouchPowerEntry
+
+[Sources]
+  B2LTouchPowerDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  SamsungPkg/SamsungPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  DebugLib
+  IoLib
+  TimerLib
+
+[Protocols]
+  gEfiSpeedyProtocolGuid
+  gEfiHsI2cProtocolGuid
+  gEfiPmicRegulatorProtocolGuid
+
+[Depex]
+  gEfiPmicRegulatorProtocolGuid AND gEfiHsI2cProtocolGuid

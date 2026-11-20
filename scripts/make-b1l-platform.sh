@@ -26,12 +26,13 @@ grep -qE '^\s*TimerLib\s*$' "$ufs" || { echo "UfsDxe TimerLib fix not applied" >
 # drivers use the same old numbering and are not used. Disk drivers are upstream.
 mkdir -p "$pkg/Binary"
 cp -R "$repo_root/uefi-platform/beyond1lte/binaries/"* "$pkg/Binary/"
+rm -rf "$pkg/B2LTouchPowerDxe" && cp -R "$repo_root/uefi-platform/beyond1lte/B2LTouchPowerDxe" "$pkg/"
 PKG="$pkg" python3 - <<'PY'
 import os, re
 from pathlib import Path
 pkg = Path(os.environ['PKG'])
 # Samsung/keypad drivers stay upstream. Upstream HsI2cDxe has no 9820 HsI2cLib, so HSI2C
-# (and the touch driver after it) come from the owner's firmware.
+# comes from the owner's firmware; B2LTouchPowerDxe (source) powers the touch chip after PMIC.
 swap = {'SamsungPkg/Drivers/HsI2cDxe/HsI2cDxe.inf': 'B2LHsI2cDxe'}
 binf = lambda n: f'beyond1ltePkg/Binary/{n}/{n}.inf'
 storage = ('\n  # B2L storage stack\n'
@@ -40,21 +41,22 @@ storage = ('\n  # B2L storage stack\n'
            f'  INF {binf("B2LUfsDxe")}\n\n'
            '  INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf\n'
            '  INF FatPkg/EnhancedFatDxe/Fat.inf\n')
+touch = '  INF beyond1ltePkg/B2LTouchPowerDxe/B2LTouchPowerDxe.inf\n'
 for inc in ('APRIORI.inc', 'DXE.inc'):
     path = pkg / 'Include' / inc; text = path.read_text()
-    if 'B2LTouchDxe' in text: continue
+    if 'B2LTouchPowerDxe' in text: continue
     for old, new in swap.items():
         line = f'  INF {old}\n'
         if text.count(line) != 1: raise SystemExit(f'{inc}: expected one {old}')
-        extra = f'  INF {binf("B2LTouchDxe")}\n' if new == 'B2LHsI2cDxe' else ''
-        text = text.replace(line, f'  INF {binf(new)}\n' + extra)
+        text = text.replace(line, f'  INF {binf(new)}\n')
     anchor = '  INF SamsungPkg/Drivers/PmicDxe/PmicDxe.inf\n'
-    text = text.replace(anchor, anchor + storage)
+    if text.count(anchor) != 1: raise SystemExit(f'{inc}: expected one PmicDxe')
+    text = text.replace(anchor, anchor + touch + storage)
     path.write_text(text)
 dsc = pkg / 'beyond1lte.dsc'; text = dsc.read_text()
-if 'B2LTouchDxe/B2LTouchDxe.inf' not in text:
+if 'B2LTouchPowerDxe.inf' not in text:
     names = sorted(d.name for d in (pkg / 'Binary').iterdir() if (d / f'{d.name}.inf').is_file())
-    text += '\n[Components]\n' + ''.join(f'  {binf(n)}\n' for n in names)
+    text += '\n[Components]\n' + ''.join(f'  {binf(n)}\n' for n in names) + touch.replace('  INF ', '  ')
     dsc.write_text(text)
 PY
 echo "beyond1ltePkg prepared for B2L"
