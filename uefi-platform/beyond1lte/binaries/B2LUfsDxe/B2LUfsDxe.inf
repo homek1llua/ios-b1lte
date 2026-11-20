@@ -1,0 +1,14 @@
+## @file
+#  UfsDxe taken unchanged from the owner's working beyond2ltePkg firmware (BOOT dump of
+#  2026-11-20, Exynos 9820). SHA-256 of UfsDxe.efi: 673e2feb3ef39b403c5c1e7272a256b9f4a35d6f07c2b42a407ae23d8eadac1b
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LUfsDxe
+  FILE_GUID      = 71F745DE-57DC-5B93-9AF0-ECE5796B3C90
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|UfsDxe.efi|*
+  DXE_DEPEX|UfsDxe.depex|*

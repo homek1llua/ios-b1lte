@@ -1,0 +1,14 @@
+## @file
+#  GpioDxe taken unchanged from the owner's working beyond2ltePkg firmware (BOOT dump of
+#  2026-11-20, Exynos 9820). SHA-256 of GpioDxe.efi: 8fdfa8b377ad8cf58e0e5dd05af9b08e25756ad1b709c9604c591784a2f2df4e
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LGpioDxe
+  FILE_GUID      = 09568FBC-EAE8-53BA-B357-A9C41FF08438
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|GpioDxe.efi|*
+  DXE_DEPEX|GpioDxe.depex|*

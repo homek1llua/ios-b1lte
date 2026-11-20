@@ -1,0 +1,14 @@
+## @file
+#  HsI2cDxe taken unchanged from the owner's working beyond2ltePkg firmware (BOOT dump of
+#  2026-11-20, Exynos 9820). SHA-256 of HsI2cDxe.efi: 4e17ad9ff55e6a9d65451b3b8ba9e8bd8e7186a7d2e95aa56d9b37ec7ddb64f3
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LHsI2cDxe
+  FILE_GUID      = 506B3AD1-C4A0-5B84-A052-6C1F6E9F383B
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|HsI2cDxe.efi|*
+  DXE_DEPEX|HsI2cDxe.depex|*

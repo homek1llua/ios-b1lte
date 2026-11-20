@@ -1,0 +1,14 @@
+## @file
+#  UsiDxe taken unchanged from the owner's working beyond2ltePkg firmware (BOOT dump of
+#  2026-11-20, Exynos 9820). SHA-256 of UsiDxe.efi: 2005770d99d49a2c0911bbd4d29bc422047038bffcc83a6f6bf94e8d3b10223a
+##
+[Defines]
+  INF_VERSION    = 0x0001001B
+  BASE_NAME      = B2LUsiDxe
+  FILE_GUID      = CC7F94C5-ABF6-5EF9-A6BA-D73D1433046B
+  MODULE_TYPE    = DXE_DRIVER
+  VERSION_STRING = 1.0
+
+[Binaries.AARCH64]
+  PE32|UsiDxe.efi|*
+  DXE_DEPEX|UsiDxe.depex|*
