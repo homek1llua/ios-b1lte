@@ -41,6 +41,12 @@ trap 'hdiutil detach "$mnt" >/dev/null 2>&1 || hdiutil detach -force "$mnt" >/de
 "$python" -I "$repo/scripts/init-native-cache.py" --root-header "$out/root-header.bin" --output "$mnt/b2l-cache.bin"
 "$python" -I "$repo/scripts/grow-native-cache.py" --cache "$mnt/b2l-cache.bin" \
   --backup "$out/cache-128m.backup" --bytes "$cache_bytes" --receipt "$out/cache-grow.json"
+# Optional extra files (e.g. b2l-wifi/ firmware), copied to the SYSTEM root without HFS compression.
+if [[ -n "${B2L_SYSTEM_EXTRA:-}" ]]; then
+  (cd "$B2L_SYSTEM_EXTRA" && find . -type f | while read -r f; do
+    mkdir -p "$mnt/$(dirname "$f")"; ditto --nohfsCompression "$f" "$mnt/$f"; done)
+  (cd "$mnt" && find . -path ./b2l-cache.bin -prune -o -type f -print | grep -v '^\./\.' | xargs shasum -a 256)
+fi
 sync
 hdiutil detach "$mnt" >/dev/null
 trap - EXIT

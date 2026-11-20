@@ -28,8 +28,20 @@ jobs:
           [[ $(stat -f %z "$RUNNER_TEMP/root-header.bin") -eq 4096 ]]
           xxd -l 16 -s 1024 "$RUNNER_TEMP/root-header.bin"
 
+      - name: Wi-Fi firmware (SYSTEM:/b2l-wifi)
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
+        run: |
+          d="$RUNNER_TEMP/extra/b2l-wifi"; mkdir -p "$d"
+          for f in fw.bin nvram.txt clm.blob bt.hcd; do
+            gh api "repos/$PRIVATE_REPO/contents/wifi/$f" -H "Accept: application/vnd.github.raw" > "$d/$f"
+          done
+          shasum -a 256 "$d"/*
+          echo "1676f46ce56b96f58dc70de08beaab4ab3362ee6dd751465a8d6a0023c3c54ad  $d/fw.bin" | shasum -a 256 -c
+
       - name: Build
         env:
+          B2L_SYSTEM_EXTRA: ${{ runner.temp }}/extra
           B2L_ROOT: ${{ github.workspace }}
           B2L_PYTHON: python3
           B2L_ROOT_HEADER: ${{ runner.temp }}/root-header.bin
