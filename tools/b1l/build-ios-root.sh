@@ -6,15 +6,18 @@
 #
 # Reads the decrypted 23G90 images in ~/Developer/s10-port/ipsw-23G90 and writes
 # beyond2lte-ios/out/ipsw/ios26-userdata.hfs.img. Touches no phone.
+# Every location can be overridden (S10_PORT, B2L_IPSW_DIR, B2L_TOOLS, B2L_ROOT,
+# B2L_PYTHON, B2L_OUT, B2L_CACHE_SRC, B2L_CACHE_ORIG, B2L_NC_STATIC); see
+# scripts/ci-build-ios-images.sh.
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 user_home=$(eval echo "~${SUDO_USER:-$USER}")
-port="$user_home/Developer/s10-port"
-ipsw="$port/ipsw-23G90"
-tools="$port/b1l-tools"
-repo="$port/beyond2lte-ios"
-python="$user_home/Developer/tools/mamba/envs/s10/bin/python3"
-out="$repo/out/ipsw"
+port="${S10_PORT:-$user_home/Developer/s10-port}"
+ipsw="${B2L_IPSW_DIR:-$port/ipsw-23G90}"
+tools="${B2L_TOOLS:-$port/b1l-tools}"
+repo="${B2L_ROOT:-$port/beyond2lte-ios}"
+python="${B2L_PYTHON:-$user_home/Developer/tools/mamba/envs/s10/bin/python3}"
+out="${B2L_OUT:-$repo/out/ipsw}"
 image="$out/ios26-userdata.hfs.img"
 log="$out/build-ios-root.log"
 
@@ -99,9 +102,9 @@ echo "== 5b/7 PAC translation (as B1L-0011/0012 did on the old root)"
 # static-work/out-0250: the original cache translated by nc-static apply (PACGA ABI v2, stub islands; corecrypto
 # excluded) plus the two MediaServices NOPs (B1L-0011); compared with static-work/orig: 2 unexpected changes, both
 # those NOPs (static-work/compare-0250.txt). Written in place: same size, inode and owner.
-cache_src="$port/static-work/out-0250"
-cache_orig="$port/static-work/orig"
-nc="$tools/static-translate/nc-static"
+cache_src="${B2L_CACHE_SRC:-$port/static-work/out-0250}"
+cache_orig="${B2L_CACHE_ORIG:-$port/static-work/orig}"
+nc="${B2L_NC_STATIC:-$tools/static-translate/nc-static}"
 rel=private/preboot/Cryptexes/OS/System/Library/Caches/com.apple.dyld
 [[ -d "$cache_src" && -d "$cache_orig" && -x "$nc" ]] || { echo "missing out-0250, orig or nc-static" >&2; exit 1; }
 n=0

@@ -5,10 +5,10 @@
 # Local files only; touches no phone. No sudo needed.
 set -euo pipefail
 port="${S10_PORT:-$HOME/Developer/s10-port}"
-repo="$port/beyond2lte-ios"
-python="${PY_ENV:-$HOME/Developer/tools/mamba/envs/s10}/bin/python3"
-root_image="$repo/out/ipsw/ios26-userdata.hfs.img"
-out="$repo/out/system"
+repo="${B2L_ROOT:-$port/beyond2lte-ios}"
+python="${B2L_PYTHON:-${PY_ENV:-$HOME/Developer/tools/mamba/envs/s10}/bin/python3}"
+root_image="${B2L_ROOT_IMAGE:-$repo/out/ipsw/ios26-userdata.hfs.img}"
+out="${B2L_SYSTEM_OUT:-$repo/out/system}"
 partition_bytes=7340032000            # /dev/block/sda25, measured on the S10
 log_bytes=$((16 * 1024 * 1024))       # B2L_SYSTEM_LOG_BYTES
 hfs_bytes=$((partition_bytes - log_bytes))
