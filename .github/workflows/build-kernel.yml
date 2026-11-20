@@ -10,7 +10,7 @@ on:
 
 jobs:
   kernel:
-    runs-on: macos-latest
+    runs-on: macos-26-intel  # arm64 macOS runners were dropped for capacity; the kernel is cross-compiled
     timeout-minutes: 180
     env:
       KDK_REPO: homek1llua/b1l-private
@@ -56,7 +56,7 @@ jobs:
       - name: Build kernel
         env:
           B2L_DEPSROOT: ${{ runner.temp }}/deps
-          BUILD_JOBS: 3
+          BUILD_JOBS: 4
         run: bash scripts/build-kernel.sh CWARNFLAGS=-w CXXWARNFLAGS=-w
 
       - name: Collect kernel
