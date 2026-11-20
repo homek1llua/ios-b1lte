@@ -1,0 +1,49 @@
+name: Build SYSTEM image
+
+# SYSTEM image only, for a given partition size, matched to an existing iOS root
+# through its 4 KiB header (roots/<release>/root-header.bin in the private repo).
+on:
+  push:
+    branches: [system-image]
+
+env:
+  PRIVATE_REPO: homek1llua/b1l-private
+  RELEASE_TAG: ios-images-23G90-r1
+  SYSTEM_BYTES: "5976883200"   # sda25 on the owner's S10 (TWRP, 2026-11-20)
+  CACHE_MIB: "4600"            # native cache; leaves ~1 GiB of HFS free
+
+jobs:
+  system:
+    runs-on: macos-26-intel
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Root header
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
+        run: |
+          gh api "repos/$PRIVATE_REPO/contents/roots/$RELEASE_TAG/root-header.bin" -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/root-header.bin"
+          [[ $(stat -f %z "$RUNNER_TEMP/root-header.bin") -eq 4096 ]]
+          xxd -l 16 -s 1024 "$RUNNER_TEMP/root-header.bin"
+
+      - name: Build
+        env:
+          B2L_ROOT: ${{ github.workspace }}
+          B2L_PYTHON: python3
+          B2L_ROOT_HEADER: ${{ runner.temp }}/root-header.bin
+          B2L_SYSTEM_OUT: ${{ runner.temp }}/system
+          B2L_SYSTEM_BYTES: ${{ env.SYSTEM_BYTES }}
+          B2L_CACHE_MIB: ${{ env.CACHE_MIB }}
+        run: bash tools/b1l/build-system-image.sh
+
+      - name: Upload to private release
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
+        run: |
+          s="$RUNNER_TEMP/system"; name="system-$SYSTEM_BYTES"
+          tar -C "$s" -czf "$RUNNER_TEMP/$name.tar.gz" b1l-system.img
+          (cd "$s" && shasum -a 256 b1l-system.img) > "$RUNNER_TEMP/$name.SHA256.txt"
+          cat "$RUNNER_TEMP/$name.SHA256.txt"; ls -l "$RUNNER_TEMP/$name.tar.gz"
+          gh release upload "$RELEASE_TAG" -R "$PRIVATE_REPO" --clobber "$RUNNER_TEMP/$name.tar.gz" "$RUNNER_TEMP/$name.SHA256.txt"
