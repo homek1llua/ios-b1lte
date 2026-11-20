@@ -48,6 +48,15 @@ jobs:
           B2L_LAUNCH_CACHE: ${{ runner.temp }}/launchd.plist
         run: bash scripts/prepare-xnu.sh
 
+      - name: Prepare Mu workspace
+        run: |
+          brew install lld
+          clang_bin="$RUNNER_TEMP/clang-bin"; mkdir -p "$clang_bin"
+          for t in clang llvm-lib llvm-rc; do ln -sf "$(brew --prefix llvm)/bin/$t" "$clang_bin/$t"; done
+          ln -sf "$(brew --prefix lld)/bin/lld-link" "$clang_bin/lld-link"
+          echo "CLANG_BIN=$clang_bin" >> "$GITHUB_ENV"
+          echo "WORKSPACE=$(bash scripts/setup-mu-workspace.sh "$RUNNER_TEMP/mu-workspace")" >> "$GITHUB_ENV"
+
       - name: Build EFI / XnuLoader
         run: bash scripts/build-efi.sh
 
