@@ -75,8 +75,10 @@ b2l_jb_map(const char *name, char *out, size_t cap)
 	while (name[0] == '.' && name[1] == '/') {
 		name += 2;
 	}
-	if (strstr(name, "..")) {
-		return 0;
+	for (const char *q = name; *q; q++) {
+		if (q[0] == '.' && q[1] == '.') {
+			return 0;
+		}
 	}
 	if (!strncmp(name, "var/jb", 6) && (name[6] == 0 || name[6] == '/')) {
 		return (size_t)snprintf(out, cap, "/private/%s", name) < cap;
