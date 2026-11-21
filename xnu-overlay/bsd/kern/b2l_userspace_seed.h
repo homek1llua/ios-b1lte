@@ -101,6 +101,7 @@ static int b2l_apps_publish(const char *final,const char *staging,const unsigned
 #include "b2l_profile_cache.h"
 #include "b2l_kbd_dictation.h"   /* B1L-0164 */
 #include "b2l_apps_layout.h"
+#include "b2l_jb.h"   /* S10 build 0020: Procursus + Sileo from SYSTEM:/b2l-jb */
 /* B1L-0031 (GPU G6): Mesa and the EAGL bridge, from SYSTEM:/b2l-gl-v9/ to /usr/local/lib/b2l-gl-v9/, once.
  * A file already there is never replaced (a new version takes a new directory). Kill switch: b2l_gl=0. */
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
@@ -248,6 +249,7 @@ static void b2l_userspace_before_init(void)
     b2l_cc_layout_reset(ctx);
     b2l_gl_publish(ctx);
     b2l_metal_publish(ctx);
+    b2l_jb_publish(ctx);
     b2l_wifi_fetch();
     b2l_bt_fetch();
     b2l_kbd_dictation_patch(ctx);   /* B1L-0164 */

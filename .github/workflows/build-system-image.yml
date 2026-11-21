@@ -13,6 +13,10 @@ on:
         description: Build and include the Metal GPU sets
         type: boolean
         default: true
+      jb:
+        description: Include the jailbreak payload (Procursus rootless bootstrap + Sileo, SYSTEM:/b2l-jb)
+        type: boolean
+        default: true
 
 env:
   PRIVATE_REPO: homek1llua/b1l-private
@@ -62,9 +66,51 @@ jobs:
             ~/Developer/s10-port/build-metal/b2l-metal-v5
             ~/Developer/s10-port/build-metal/b2l-metal-v95
 
+  jb:
+    if: ${{ inputs.jb }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Bootstrap and Sileo
+        run: |
+          set -euo pipefail
+          curl -sfL -o bs.tar.zst https://static.palera.in/rootless/bootstrap-2000.tar.zst
+          curl -sfL -o sileo.deb https://github.com/Sileo/Sileo/releases/download/2.5.1/org.coolstar.sileo_2.5.1_iphoneos-arm64.deb
+          sha256sum bs.tar.zst sileo.deb
+          mkdir s && sudo tar --zstd -xpf bs.tar.zst -C s
+          sudo dpkg-deb -x sileo.deb s
+          sudo mkdir -p s/Applications
+          sudo mv s/var/jb/Applications/Sileo.app s/Applications/Sileo.app
+          st=s/var/jb/Library/dpkg/status
+          ls -l "$st"
+          # What prep_bootstrap's "firmware" would register, and Sileo itself as installed (its app is at
+          # /Applications/Sileo.app on this port, a system app for LaunchServices)
+          {
+            echo
+            for p in "firmware 26.6.2" "cy+os.ios 26.6.2" "cy+cpu.arm64 0" "cy+model.iphone 11.1" "cy+kernel.darwin 25.6.0"; do
+              set -- $p
+              printf 'Package: %s\nEssential: yes\nStatus: install ok installed\nPriority: required\nSection: System\nInstalled-Size: 0\nMaintainer: ios-b1lte\nArchitecture: iphoneos-arm64\nVersion: %s\nDescription: virtual package for the S10 port\n\n' "$1" "$2"
+            done
+            dpkg-deb -f sileo.deb | sed '/^$/d' | awk 'NR==1{print; print "Status: install ok installed"; next} {print}'
+            echo
+          } | sudo tee -a "$st" > /dev/null
+          dpkg-deb -c sileo.deb | awk '{print $6}' | sed 's|^\./|/|; s|/$||; s|^/var/jb/Applications/Sileo.app|/Applications/Sileo.app|' | grep -v '^$' | sudo tee s/var/jb/Library/dpkg/info/org.coolstar.sileo.list > /dev/null
+          grep -c '^Package:' "$st"
+          sudo ls -la s/Applications/Sileo.app | head; sudo find s -type f -perm -4000
+          mkdir -p out/b2l-jb
+          sudo tar --format=gnu --numeric-owner -cpf jb.tar -C s var Applications
+          ls -l jb.tar
+          split -b 62914560 -d -a 1 jb.tar out/b2l-jb/jb.part
+          ls -l out/b2l-jb; sha256sum jb.tar
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: jb
+          path: out
+
   system:
-    needs: metal
-    if: ${{ always() && (needs.metal.result == 'success' || needs.metal.result == 'skipped') }}
+    needs: [metal, jb]
+    if: ${{ always() && (needs.metal.result == 'success' || needs.metal.result == 'skipped') && (needs.jb.result == 'success' || needs.jb.result == 'skipped') }}
     runs-on: macos-26-intel
     timeout-minutes: 60
     steps:
@@ -76,6 +122,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: metal-sets
+          path: ${{ runner.temp }}/extra
+
+      - name: Jailbreak payload (SYSTEM:/b2l-jb)
+        if: ${{ inputs.jb }}
+        uses: actions/download-artifact@v4
+        with:
+          name: jb
           path: ${{ runner.temp }}/extra
 
       - name: Root header
