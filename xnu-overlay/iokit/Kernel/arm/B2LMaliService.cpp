@@ -501,6 +501,22 @@ HakiosMaliUserClient::createBO(struct drm_panfrost_create_bo * request)
 		memory = IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task, kIODirectionInOut | kIOMemoryKernelUserShared |
 		    kIOMapWriteCombineCache, (vm_size_t) backed, PAGE_SIZE);
 	}
+	/* B1L-0016 (beyond1lte): the two kinds above come from fixed kernel address ranges (kmem_io is 1 GB) that fill up
+	 * with ~1 GB of GPU buffers alive (9 Metal clients), while free memory remains: 19-36 MB buffers -- the wallpaper,
+	 * Liquid Glass's textures -- were refused (133 a session). Last resort: pageable memory from IOKit's own 1.5 GB
+	 * range, wired here for as long as the buffer lives (freeBuffer()'s release completes it). */
+	if (memory == NULL && backed >= (1ull << 20)) {
+		memory = IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task, kIODirectionInOut | kIOMemoryPageable |
+		    kIOMapWriteCombineCache, (vm_size_t) backed, PAGE_SIZE);
+		if (memory != NULL && memory->prepare() != kIOReturnSuccess) {
+			memory->release();
+			memory = NULL;
+		}
+		static unsigned b2l_pageable_said;
+		if (memory != NULL && b2l_pageable_said++ < 8) {
+			IOLog("HakiosMali: a buffer of %llu bytes from pageable memory, wired (B1L-0016)\n", size);
+		}
+	}
 	if (memory == NULL) {
 		IOLog("HakiosMali: no memory for a buffer of %llu bytes (B1L-0119: free %llu MB, wired %llu MB, GPU buffers "
 		    "alive %llu MB, IOSurfaces %llu MB)\n", size, (uint64_t)vm_page_free_count * PAGE_SIZE >> 20,

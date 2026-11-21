@@ -74,7 +74,8 @@ python3 "$repo_root/scripts/apply-board-patches.py" "$xnu_path" \
   "$repo_root/patches/0105-b2l-phys-cache-op-unowned-page.patch" \
   "$repo_root/patches/0106-b2l-pmap-owned-ram-is-dram-and-ptoa.patch" \
   "$repo_root/patches/0108-b2l-el0-cache-maintenance.patch" \
-  "$repo_root/patches/0109-b2l-webkit-no-jit.patch"
+  "$repo_root/patches/0109-b2l-webkit-no-jit.patch" \
+  "$repo_root/patches/0110-b2l-backboardd-irq-sampler.patch"
 # New files have separate provenance and are kept as an overlay. A few overlay files
 # (e.g. iokit/Kernel/IOUserClient.cpp) are full replacements of upstream files that the
 # patches above already touched; those are tracked by the XNU checkout and are replaced.

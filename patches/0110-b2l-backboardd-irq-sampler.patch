@@ -1,0 +1,20 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index fd4811a0..e87354bd 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -3134,6 +3134,15 @@ sleh_irq(arm_saved_state_t *state)
+ 	/* GICv2 reserves 1020..1023 as special/spurious acknowledgements. */
+ 	if (intid < 1020) {
+ 		b2l_irq_record(intid);
++		{
++			/* B1L-0016: where backboardd is when an interrupt lands (b2l_prof.c's sampler, never called before) */
++			extern task_t volatile b2l_prof_task;
++			extern void b2l_prof_irq(arm_saved_state_t *);
++			task_t prof = b2l_prof_task;
++			if (prof != TASK_NULL && current_task() == prof) {
++				b2l_prof_irq(state);
++			}
++		}
+ 		if (intid == B2L_TIMER_INTID) {
+ 			cdp->cpu_decrementer = -1;
+ 			ml_interrupt_masked_debug_start(rtclock_intr, DBG_INTR_TYPE_TIMER);
