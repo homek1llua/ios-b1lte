@@ -2,7 +2,7 @@ diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
 index 942dc249..0a755f17 100644
 --- a/bsd/vfs/vfs_syscalls.c
 +++ b/bsd/vfs/vfs_syscalls.c
-@@ -10365,6 +10365,33 @@ renameatx_np(__unused proc_t p, struct renameatx_np_args *uap, __unused int32_t
+@@ -10365,6 +10365,32 @@ renameatx_np(__unused proc_t p, struct renameatx_np_args *uap, __unused int32_t
  	           uap->tofd, uap->to, UIO_USERSPACE, uap->flags);
  }
  
