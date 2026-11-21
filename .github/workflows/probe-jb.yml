@@ -6,21 +6,18 @@ jobs:
   probe:
     runs-on: ubuntu-24.04
     steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          for u in \
-            https://apt.procurs.us/bootstraps/2000/bootstrap-ssh-iphoneos-arm64.tar.zst \
-            https://apt.procurs.us/bootstraps/2000/bootstrap-iphoneos-arm64.tar.zst \
-            https://apt.procurs.us/bootstraps/1900/bootstrap-ssh-iphoneos-arm64.tar.zst \
-            https://apt.procurs.us/bootstraps/1800/bootstrap-iphoneos-arm64.tar.zst \
-            https://static.palera.in/rootless/bootstrap-2000.tar.zst \
-            https://static.palera.in/rootless/bootstrap-1900.tar.zst \
-            https://static.palera.in/rootless/bootstrap-1800.tar.zst; do
-            echo "$(curl -s -o /dev/null -w '%{http_code} %{size_download}' -L "$u") $u"
-          done
-          gh api repos/Sileo/Sileo/releases -q '.[0:3][] | .tag_name + " " + ([.assets[] | .name + "=" + .browser_download_url] | join(" "))' || true
-          gh api repos/opa334/Dopamine/releases/latest -q '.tag_name' || true
-          curl -sL https://apt.procurs.us/dists/iphoneos-arm64-rootless/2000/main/binary-iphoneos-arm64/Packages.zst -o p.zst && zstd -dc p.zst | grep -A3 -m3 "^Package: sileo\|^Package: newterm" || true
-          curl -s -o /dev/null -w '%{http_code}\n' https://apt.procurs.us/dists/iphoneos-arm64-rootless/2000/Release
-          curl -s -o /dev/null -w '%{http_code}\n' https://apt.procurs.us/dists/iphoneos-arm64/2000/Release
+      - run: |
+          set -x
+          curl -sL -o bs.tar.zst https://static.palera.in/rootless/bootstrap-2000.tar.zst
+          curl -sL -o sileo.deb https://github.com/Sileo/Sileo/releases/download/2.5.1/org.coolstar.sileo_2.5.1_iphoneos-arm64.deb
+          mkdir s && sudo tar --zstd -xpf bs.tar.zst -C s
+          sudo find s -maxdepth 3 | head -40
+          sudo du -sh s; sudo find s | wc -l
+          sudo find s -name 'prep_bootstrap*' -exec cat {} \;
+          sudo cat s/var/jb/var/lib/dpkg/status | grep -c '^Package:'
+          sudo grep -A2 '^Package: firmware\|^Package: apt$\|^Package: dpkg$' s/var/jb/var/lib/dpkg/status
+          sudo ls -la s/var/jb s/var/jb/etc/apt/sources.list.d 2>/dev/null; sudo cat s/var/jb/etc/apt/sources.list.d/* 2>/dev/null
+          dpkg-deb -I sileo.deb; dpkg-deb -c sileo.deb | head -30
+          sudo find s -type f -perm -4000 | head
+          sudo tar -tvf bs.tar.zst --zstd | head -5
+          file s/var/jb/usr/bin/apt s/var/jb/bin/sh 2>/dev/null || sudo file s/var/jb/usr/bin/* | head -3
