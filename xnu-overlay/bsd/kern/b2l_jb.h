@@ -17,7 +17,7 @@
 
 #include <sys/dirent.h>
 
-#define B2L_JB_MARKER "/private/var/db/b2l-jb-v1"
+#define B2L_JB_MARKER "/private/var/db/b2l-jb-v2"   /* v2 (build 0024): apt's lists and archives dirs, extracted again */
 
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
 
@@ -545,6 +545,82 @@ b2l_jb_ls_reset(vfs_context_t ctx)
 		e = b2l_layout_marker(B2L_JB_LS_MARKER, ctx);
 	}
 	printf("B2L JB LS: %u stores, %u set aside, error=%d\n", stores, moved, e);
+}
+
+/*
+ * S10 build 0024: the app icons were drawn as flat squares while iconservicesagent's RenderBox pipelines were refused
+ * ("a phi of a struct"); its cache keeps them. Every entry whose name has "IconsCache" in Library/Caches/ of every
+ * container under the roots below (and /private/var/mobile/Library/Caches/) is set aside once, so the icons are drawn
+ * again by the Metal compiler that now takes those pipelines (marker /private/var/db/b2l-icons-v1).
+ */
+#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v1"
+
+static int
+b2l_icons_name(const char *n)
+{
+	static const char *const keys[] = { "IconsCache", "iconscache", "iconservices" };
+	for (unsigned k = 0; k < 3; k++) {
+		size_t kl = strlen(keys[k]);
+		for (const char *s = n; *s; s++) {
+			if (!strncmp(s, keys[k], kl)) {
+				size_t nl = strlen(n), sl = sizeof(".b2l-0024") - 1;
+				return nl < sl || strcmp(n + nl - sl, ".b2l-0024") != 0;
+			}
+		}
+	}
+	return 0;
+}
+
+static unsigned
+b2l_icons_dir(const char *dir, vfs_context_t ctx)
+{
+	static char files[64][128], from[MAXPATHLEN], to[MAXPATHLEN];
+	unsigned moved = 0, m = b2l_jb_list(dir, files, 64, ctx);
+	for (unsigned f = 0; f < m; f++) {
+		if (!b2l_icons_name(files[f])) {
+			continue;
+		}
+		if (!b2l_layout_join(from, sizeof(from), dir, files[f], NULL) &&
+		    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-0024")) {
+			int rr = b2l_layout_move(from, to, ctx);
+			moved += rr == 0;
+			printf("B2L ICONS: %s%s %s\n", dir, files[f], rr == 0 ? "set aside" : rr == 1 ? "kept" : "error");
+		}
+	}
+	return moved;
+}
+
+static void
+b2l_icons_reset(vfs_context_t ctx)
+{
+	static char containers[256][128], dir[MAXPATHLEN];
+	static const char *const roots[] = {
+		"/private/var/containers/Shared/SystemGroup/",
+		"/private/var/mobile/Containers/Data/InternalDaemon/",
+		"/private/var/containers/Data/System/",
+		"/private/var/mobile/Containers/Shared/AppGroup/",
+	};
+	unsigned moved = 0;
+	int on = 1, e = 0;
+
+	PE_parse_boot_argn("b2l_icons_reset", &on, sizeof(on));
+	if (!on || b2l_layout_exists(B2L_ICONS_MARKER, ctx) == 1) {
+		return;
+	}
+	moved += b2l_icons_dir("/private/var/mobile/Library/Caches/", ctx);
+	for (unsigned r = 0; r < 4; r++) {
+		unsigned n = b2l_jb_list(roots[r], containers, 256, ctx);
+		for (unsigned c = 0; c < n; c++) {
+			if (!b2l_layout_join(dir, sizeof(dir), roots[r], containers[c], "/Library/Caches/")) {
+				moved += b2l_icons_dir(dir, ctx);
+			}
+		}
+	}
+	e = VFS_SYNC(vnode_mount(rootvnode), MNT_WAIT, ctx);
+	if (!e) {
+		e = b2l_layout_marker(B2L_ICONS_MARKER, ctx);
+	}
+	printf("B2L ICONS: %u caches set aside, error=%d\n", moved, e);
 }
 
 #endif /* B2L_JB_H */

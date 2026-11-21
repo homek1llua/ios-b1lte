@@ -2810,3 +2810,309 @@ if 'B1L-0185' not in u:
     open(q, 'w').write(u)
 print('air-b2l: recycled resource buffers zeroed')
 
+# S10 build 0024: RenderBox (B1L-0188..0190, renderbox-0188-0190.py.txt) back, for iconservicesagent only -- the app
+# icons were flat squares (13 render pipelines refused: "a phi of a struct").
+
+# B1L-0188: RenderBox (SwiftUI's renderer: icons, Control Center glyphs, widgets) needs three things this translator
+# refused. (1) A phi of STRUCTS ({<4 x half>, i8}, a sample and its flag): one register per leaf. (2) A phi of pointers
+# that walk ONE buffer (a binary search over path segments): the resource is known while translating, only the byte
+# offset changes, so the offset goes in a register. (3) A select between two places in one buffer: a bcsel of offsets.
+t = sys.argv[1] + '/air_to_nir.c'
+u = open(t).read()
+def rep188(a, b, what):
+    global u
+    if u.count(a) != 1:
+        sys.exit('air-b2l: %s is not as expected (B1L-0188)' % what)
+    u = u.replace(a, b)
+
+rep188("""static bool
+resolve_pointer_phi(struct air_ctx *c, const struct air_inst *in, const bool *reachable)
+{
+   struct air_val *first = NULL;
+""", """/* B2L (S10 build 0024): RenderBox's translations (B1L-0188..0190) only in iconservicesagent, which draws the app
+ * icons once into its cache; they were withdrawn in B1L-0191 for the flicker and slow apps they brought everywhere. */
+const char *getprogname(void);
+
+static bool
+b2l_rb_on(void)
+{
+   static int on = -1;
+   if (on < 0) {
+      const char *me = getprogname();
+      on = me && !strcmp(me, "iconservicesagent");
+   }
+   return on;
+}
+
+/* B2L (B1L-0188): two pointers into one piece of byte-addressed memory, which differ by their offset alone */
+static bool
+b2l_ptr_same_memory(const struct air_ptr *a, const struct air_ptr *b)
+{
+   return a->class == b->class && a->binding == b->binding && a->is_image == b->is_image &&
+          (a->class == AIR_PTR_UBO || a->class == AIR_PTR_SSBO || a->class == AIR_PTR_SHARED ||
+           a->class == AIR_PTR_SCRATCH || a->class == AIR_PTR_CONSTANT_DATA);
+}
+
+/* B2L (B1L-0190): the first resolved pointer under a choice of pointers */
+static const struct air_val *
+b2l_ptr_leaf(const struct air_val *v)
+{
+   while (v && v->kind == AIR_VAL_PTR_SELECT && v->num_elems == 2)
+      v = v->elems[0];
+   return v && v->kind == AIR_VAL_PTR ? v : NULL;
+}
+
+/* B2L (B1L-0190): the byte offset of a pointer into `like`'s memory; a choice between two is a bcsel of theirs */
+static nir_def *
+b2l_ptr_offset(struct air_ctx *c, const struct air_val *v, const struct air_ptr *like)
+{
+   if (v && v->kind == AIR_VAL_PTR_SELECT && v->num_elems == 2) {
+      nir_def *x = b2l_ptr_offset(c, v->elems[0], like), *y = b2l_ptr_offset(c, v->elems[1], like);
+      return x && y ? nir_bcsel(&c->b, v->def, x, y) : NULL;
+   }
+   if (!v || v->kind != AIR_VAL_PTR || !b2l_ptr_same_memory(&v->ptr, like))
+      return NULL;
+   return v->ptr.offset ? v->ptr.offset : nir_imm_int(&c->b, 0);
+}
+
+/* B2L (B1L-0188): a phi of an aggregate is a tree of registers, one per leaf */
+static struct air_val *
+b2l_phi_agg_regs(struct air_ctx *c, nir_builder *entry, const struct air_type *t)
+{
+   if (t->kind == AIR_TYPE_STRUCT || t->kind == AIR_TYPE_ARRAY) {
+      unsigned n = t->kind == AIR_TYPE_STRUCT ? t->num_members : (unsigned)t->count;
+      struct air_val *v = air_val_agg(c, n);
+      for (unsigned i = 0; i < n; i++) {
+         v->elems[i] = b2l_phi_agg_regs(c, entry, t->kind == AIR_TYPE_STRUCT ? t->members[i] : t->elem);
+         if (!v->elems[i])
+            return NULL;
+      }
+      return v;
+   }
+   if (t->kind == AIR_TYPE_POINTER) {
+      air_error(c, "instruction: a phi of an aggregate that holds a pointer");
+      return NULL;
+   }
+   return air_val_ssa(c, nir_decl_reg(entry, air_nir_components(t), air_nir_bit_size(c, t), 0));
+}
+
+static struct air_val *
+b2l_phi_agg_load(struct air_ctx *c, const struct air_val *regs)
+{
+   if (regs->kind != AIR_VAL_AGG)
+      return air_val_ssa(c, nir_load_reg(&c->b, regs->def));
+   struct air_val *v = air_val_agg(c, regs->num_elems);
+   for (unsigned i = 0; i < regs->num_elems; i++)
+      v->elems[i] = b2l_phi_agg_load(c, regs->elems[i]);
+   return v;
+}
+
+static bool
+b2l_phi_agg_store(struct air_ctx *c, const struct air_val *regs, const struct air_val *val)
+{
+   if (!val || val->kind == AIR_VAL_NONE)
+      return true;   /* an undef member: nothing to carry */
+   if (regs->kind != AIR_VAL_AGG) {
+      if (val->kind != AIR_VAL_SSA || !val->def ||
+          val->def->num_components != nir_intrinsic_num_components(nir_reg_get_decl(regs->def)))
+         return air_error(c, "instruction: a phi of an aggregate one of whose leaves is not the value its type says");
+      nir_store_reg(&c->b, val->def, regs->def);
+      return true;
+   }
+   if (val->kind != AIR_VAL_AGG || val->num_elems != regs->num_elems)
+      return air_error(c, "instruction: a phi of an aggregate whose operand is not that aggregate");
+   for (unsigned i = 0; i < regs->num_elems; i++)
+      if (!b2l_phi_agg_store(c, regs->elems[i], val->elems[i]))
+         return false;
+   return true;
+}
+
+static bool
+resolve_pointer_phi(struct air_ctx *c, const struct air_inst *in, const bool *reachable)
+{
+   bool b2l_reg = false;   /* B2L (B1L-0188): the offset differs between edges, or comes over a loop edge */
+   struct air_val *first = NULL;
+""", 'resolve_pointer_phi')
+
+rep188("""      if (!e)
+         return air_error(c, "instruction: a phi of pointers whose operand comes in over "
+                             "a loop edge, so which resource it is depends on the "
+                             "iteration");
+      struct air_val *v = e->data;""", """      if (!e) {
+         if (!b2l_rb_on())
+            return air_error(c, "instruction: a phi of pointers whose operand comes in over "
+                                "a loop edge, so which resource it is depends on the "
+                                "iteration");
+         b2l_reg = true;   /* B2L (B1L-0188): checked against the resource when the stores are made */
+         continue;
+      }
+      struct air_val *v = e->data;
+      if (b2l_rb_on() && v && v->kind == AIR_VAL_PTR_SELECT && b2l_ptr_leaf(v) &&
+          b2l_ptr_same_memory(&b2l_ptr_leaf(v)->ptr, &b2l_ptr_leaf(v)->ptr)) {   /* B2L (B1L-0190) */
+         b2l_reg = true;
+         if (!first)
+            first = (struct air_val *)b2l_ptr_leaf(v);
+         continue;
+      }""", 'the loop-edge refusal')
+
+rep188("""      else if (!same_ptr(&first->ptr, &v->ptr))
+         return air_error(c, "instruction: a phi between pointers that name different "
+                             "places, which would have to be chosen at run time");
+   }
+   if (!first)
+      first = null_tex;""", """      else if (!same_ptr(&first->ptr, &v->ptr)) {
+         if (!b2l_rb_on() || !b2l_ptr_same_memory(&first->ptr, &v->ptr))
+            return air_error(c, "instruction: a phi between pointers that name different "
+                                "places, which would have to be chosen at run time");
+         b2l_reg = true;
+      }
+   }
+   if (b2l_reg) {   /* B2L (B1L-0188): one resource, the byte offset in a register */
+      if (!first || !b2l_ptr_same_memory(&first->ptr, &first->ptr))
+         return air_error(c, "instruction: a phi of pointers whose operand comes in over "
+                             "a loop edge, so which resource it is depends on the "
+                             "iteration");
+      nir_builder entry = nir_builder_at(nir_before_impl(c->b.impl));
+      nir_def *reg = nir_decl_reg(&entry, 1, 32, 0);
+      _mesa_hash_table_insert(c->phi_regs, in, reg);
+      struct air_ptr p = first->ptr;
+      p.offset = nir_load_reg(&c->b, reg);
+      air_set(c, &in->base, air_val_ptr(c, p));
+      return true;
+   }
+   if (!first)
+      first = null_tex;""", 'the different-places refusal')
+
+rep188("""         if (in->base.type->kind == AIR_TYPE_STRUCT ||
+             in->base.type->kind == AIR_TYPE_ARRAY)
+            return air_error(c, "instruction: a phi of %s, which NIR has no register for",
+                             in->base.type->kind == AIR_TYPE_STRUCT ? "a struct"
+                                                                    : "an array");
+""", """         if (in->base.type->kind == AIR_TYPE_STRUCT ||
+             in->base.type->kind == AIR_TYPE_ARRAY) {   /* B2L (B1L-0188): a tree of registers */
+            if (!b2l_rb_on())
+               return air_error(c, "instruction: a phi of %s, which NIR has no register for",
+                                in->base.type->kind == AIR_TYPE_STRUCT ? "a struct" : "an array");
+            struct air_val *regs = b2l_phi_agg_regs(c, &entry, in->base.type);
+            if (!regs)
+               return false;
+            _mesa_hash_table_insert(c->phi_regs, in, regs);
+            continue;
+         }
+""", 'the aggregate phi refusal')
+
+rep188("""         struct hash_entry *e = _mesa_hash_table_search(c->phi_regs, in);
+         air_set(c, &in->base,
+                 air_val_ssa(c, nir_load_reg(&c->b, e->data)));""", """         struct hash_entry *e = _mesa_hash_table_search(c->phi_regs, in);
+         if (in->base.type->kind == AIR_TYPE_STRUCT || in->base.type->kind == AIR_TYPE_ARRAY) {
+            air_set(c, &in->base, b2l_phi_agg_load(c, e->data));   /* B2L (B1L-0188) */
+            continue;
+         }
+         air_set(c, &in->base,
+                 air_val_ssa(c, nir_load_reg(&c->b, e->data)));""", 'the phi load')
+
+rep188("""            c->b.cursor = *(nir_cursor *)ce->data;
+            nir_def *val = air_get_ssa(c, in->operands[k]);
+            if (!val)
+               return false;
+            nir_store_reg(&c->b, val, re->data);""", """            c->b.cursor = *(nir_cursor *)ce->data;
+            if (in->base.type->kind == AIR_TYPE_STRUCT || in->base.type->kind == AIR_TYPE_ARRAY) {
+               struct air_val *av = air_get(c, in->operands[k]);   /* B2L (B1L-0188) */
+               if (!av || !b2l_phi_agg_store(c, re->data, av))
+                  return false;
+               *(nir_cursor *)ce->data = c->b.cursor;
+               continue;
+            }
+            if (in->base.type->kind == AIR_TYPE_POINTER) {   /* B2L (B1L-0188): the offset of the same resource */
+               struct air_val *pv = air_get(c, in->operands[k]);
+               struct hash_entry *me = _mesa_hash_table_search(c->values, &in->base);
+               if (!pv)
+                  return false;
+               nir_def *po = me ? b2l_ptr_offset(c, pv, &((struct air_val *)me->data)->ptr) : NULL;
+               if (!po)
+                  return air_error(c, "instruction: a phi of pointers whose operand comes in over "
+                                      "a loop edge and names another resource");
+               nir_store_reg(&c->b, po, re->data);
+               *(nir_cursor *)ce->data = c->b.cursor;
+               continue;
+            }
+            nir_def *val = air_get_ssa(c, in->operands[k]);
+            if (!val)
+               return false;
+            nir_store_reg(&c->b, val, re->data);""", 'the phi store')
+
+open(t, 'w').write(u)
+print('air-b2l: phis of structs and of pointers into one buffer translated')
+
+# B1L-0189: a jump the Mali's compiler cannot emit is a refusal with a reason, not a crash. Bifrost's bi_emit_jump takes
+# break and continue only, with the loop's blocks as targets; anything else read a NULL target and crashed SpringBoard at
+# every launch (B1L-0188, after RenderBox's loops were let through).
+pm = sys.argv[1] + '/air_metal.c'
+um = open(pm).read()
+a = """   finalize_for_gallium(clone, device->screen, device->ubo_base);
+
+   struct pipe_shader_state templ = { .type = PIPE_SHADER_IR_NIR, .ir.nir = clone };"""
+if um.count(a) != 1:
+    sys.exit('air-b2l: the stage compile is not as expected (B1L-0189)')
+um = um.replace(a, """   finalize_for_gallium(clone, device->screen, device->ubo_base);
+
+   /* B2L (B1L-0190): a return in the middle of a shader (RenderBox's fa16dhmha4) becomes structured control flow
+    * (S10 build 0024: in iconservicesagent only, with the rest of RenderBox's translations) */
+   {
+      const char *b2l_me = getprogname();
+      if (b2l_me && !strcmp(b2l_me, "iconservicesagent"))
+         NIR_PASS(_, clone, nir_lower_returns);
+   }
+
+   /* B2L (B1L-0189): a jump Bifrost cannot emit, named instead of compiled */
+   {
+      const char *bad = NULL;
+      unsigned impls = 0;
+      nir_foreach_function_impl(impl, clone) {
+         impls++;
+         nir_foreach_block(block, impl) {
+            nir_instr *last = nir_block_last_instr(block);
+            if (!last || last->type != nir_instr_type_jump)
+               continue;
+            nir_jump_type jt = nir_instr_as_jump(last)->type;
+            if (jt != nir_jump_break && jt != nir_jump_continue) {
+               bad = jt == nir_jump_return ? "a return in the middle" : jt == nir_jump_halt ? "a halt" : "a goto";
+               continue;
+            }
+            nir_cf_node *n = block->cf_node.parent;
+            while (n && n->type != nir_cf_node_loop)
+               n = n->parent;
+            if (!n)
+               bad = "a break or continue outside a loop";
+         }
+      }
+      if (!bad && impls != 1)
+         bad = "more than one function left";
+      if (bad) {
+         say(why, why_size, "B2L: the %s stage %s has %s (%u functions), which the Mali's compiler cannot emit",
+             nir->info.stage == MESA_SHADER_VERTEX ? "vertex" : "fragment",
+             nir->info.name ? nir->info.name : "?", bad, impls);
+         ralloc_free(clone);
+         return NULL;
+      }
+   }
+
+   struct pipe_shader_state templ = { .type = PIPE_SHADER_IR_NIR, .ir.nir = clone };""")
+open(pm, 'w').write(um)
+q = sys.argv[1] + '/../../panfrost/compiler/bifrost_compile.c'
+u = open(q).read()
+if 'B1L-0189' not in u:
+    a = """   bi_block_add_successor(b->shader->current_block, branch->branch_target);
+   b->shader->current_block->unconditional_jumps = true;
+}"""
+    if u.count(a) != 1:
+        sys.exit('air-b2l: bi_emit_jump is not as expected (B1L-0189)')
+    u = u.replace(a, """   /* B2L (B1L-0189): a jump with no loop around it has no target; dropped rather than read through NULL */
+   if (!branch->branch_target) {
+      bi_remove_instruction(branch);
+      return;
+   }
+
+""" + a)
+    open(q, 'w').write(u)
+print('air-b2l: jumps the Mali cannot emit refused')
