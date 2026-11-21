@@ -3,20 +3,22 @@
 # b2l-cache.bin, followed by the 16 MiB persistent log region, exactly the
 # partition length. Layout rules: xnu bsd/dev/b2l_ufs_aux.c, uefi CacheEfi.c.
 # Local files only; touches no phone. No sudo needed.
+# B2L_SYSTEM_BYTES, B2L_CACHE_MIB and B2L_ROOT_HEADER (the root image's first 4 KiB,
+# when the root image itself is elsewhere) override the defaults.
 set -euo pipefail
 port="${S10_PORT:-$HOME/Developer/s10-port}"
-repo="$port/beyond2lte-ios"
-python="${PY_ENV:-$HOME/Developer/tools/mamba/envs/s10}/bin/python3"
-root_image="$repo/out/ipsw/ios26-userdata.hfs.img"
-out="$repo/out/system"
-partition_bytes=7340032000            # /dev/block/sda25, measured on the S10
+repo="${B2L_ROOT:-$port/beyond2lte-ios}"
+python="${B2L_PYTHON:-${PY_ENV:-$HOME/Developer/tools/mamba/envs/s10}/bin/python3}"
+root_image="${B2L_ROOT_IMAGE:-$repo/out/ipsw/ios26-userdata.hfs.img}"
+out="${B2L_SYSTEM_OUT:-$repo/out/system}"
+partition_bytes=${B2L_SYSTEM_BYTES:-7340032000}  # /dev/block/sda25 size; some S10s have 5976883200 (2026-11-20)
 log_bytes=$((16 * 1024 * 1024))       # B2L_SYSTEM_LOG_BYTES
 hfs_bytes=$((partition_bytes - log_bytes))
-cache_target=$((5520 * 1024 * 1024))  # about 5.52 GiB, as on the S10+
+cache_target=$((${B2L_CACHE_MIB:-5520} * 1024 * 1024))  # about 5.52 GiB, as on the S10+; smaller for a smaller SYSTEM
 cache_bytes=$(( 8192 + (cache_target - 8192) / 24576 * 24576 ))
 image="$out/b1l-system.img"
 
-[[ -f "$root_image" ]] || { echo "missing $root_image" >&2; exit 1; }
+[[ -n "${B2L_ROOT_HEADER:-}" || -f "$root_image" ]] || { echo "missing $root_image" >&2; exit 1; }
 [[ ! -e "$image" ]] || { echo "$image exists; move it away first" >&2; exit 1; }
 (( hfs_bytes % 4096 == 0 )) || { echo "HFS size not 4 KiB aligned" >&2; exit 1; }
 mkdir -p "$out"
@@ -29,7 +31,7 @@ hfs="$out/b1l-system-hfs.cdr"
 [[ $(stat -f %z "$hfs") -eq $hfs_bytes ]] || { echo "unexpected HFS image length" >&2; exit 1; }
 
 echo "== 2/6 root identity from the iOS root header"
-head -c 4096 "$root_image" > "$out/root-header.bin"
+if [[ -n "${B2L_ROOT_HEADER:-}" ]]; then cp "$B2L_ROOT_HEADER" "$out/root-header.bin"; else head -c 4096 "$root_image" > "$out/root-header.bin"; fi
 
 echo "== 3/6 create and grow b2l-cache.bin to $cache_bytes bytes"
 mnt=$(hdiutil attach -plist -nobrowse -imagekey diskimage-class=CRawDiskImage "$hfs" |
@@ -39,6 +41,12 @@ trap 'hdiutil detach "$mnt" >/dev/null 2>&1 || hdiutil detach -force "$mnt" >/de
 "$python" -I "$repo/scripts/init-native-cache.py" --root-header "$out/root-header.bin" --output "$mnt/b2l-cache.bin"
 "$python" -I "$repo/scripts/grow-native-cache.py" --cache "$mnt/b2l-cache.bin" \
   --backup "$out/cache-128m.backup" --bytes "$cache_bytes" --receipt "$out/cache-grow.json"
+# Optional extra files (e.g. b2l-wifi/ firmware), copied to the SYSTEM root without HFS compression.
+if [[ -n "${B2L_SYSTEM_EXTRA:-}" ]]; then
+  (cd "$B2L_SYSTEM_EXTRA" && find . -type f | while read -r f; do
+    mkdir -p "$mnt/$(dirname "$f")"; ditto --nohfsCompression "$f" "$mnt/$f"; done)
+  (cd "$mnt" && find . -path ./b2l-cache.bin -prune -o -type f -print | grep -v '^\./\.' | xargs shasum -a 256)
+fi
 sync
 hdiutil detach "$mnt" >/dev/null
 trap - EXIT
