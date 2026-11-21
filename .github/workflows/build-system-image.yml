@@ -100,6 +100,9 @@ jobs:
           # doesn't exist"), and apt run as root (no _apt sandbox user to drop to on this port)
           ls -la s/var/jb/var s/var/jb/var/lib || true
           sudo mkdir -p s/var/jb/var/lib/apt/lists/partial s/var/jb/var/cache/apt/archives/partial s/var/jb/etc/apt/apt.conf.d s/var/jb/etc/apt/sources.list.d s/var/jb/var/log/apt
+          # Sileo keeps its own copies of the repos' lists in /var/lib/apt/sileolists, written as mobile (0024's
+          # "the folder havoc.app_._Packages doesn't exist")
+          sudo mkdir -p s/var/jb/var/lib/apt/sileolists && sudo chown 501:501 s/var/jb/var/lib/apt/sileolists
           echo 'APT::Sandbox::User "root";' | sudo tee s/var/jb/etc/apt/apt.conf.d/00b2l-sandbox > /dev/null
           ls s/var/jb/etc/apt/sources.list.d/ && sudo cat s/var/jb/etc/apt/sources.list.d/* || true
           mkdir -p out/b2l-jb

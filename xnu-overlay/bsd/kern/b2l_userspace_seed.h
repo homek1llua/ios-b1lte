@@ -112,15 +112,55 @@ static int b2l_gl_sink(void *ctx, uint64_t off, const void *buf, size_t n)
     int e = vn_rdwr(UIO_WRITE, (vnode_t)ctx, (caddr_t)(uintptr_t)buf, (int)n, (off_t)off, UIO_SYSSPACE, IO_NOAUTH, kauth_cred_get(), &resid, current_proc());
     return e ? e : (resid ? EIO : 0);
 }
+/* S10 build 0025: a library already in place is compared with SYSTEM's and replaced when it differs (before, a file
+ * already there was never replaced, so a rebuilt Metal compiler with the same version directory never arrived). */
+extern int b2l_kernel_rename(const char *from, const char *to, vfs_context_t ctx);
+struct b2l_gl_cmp { vnode_t vp; int differs; };
+static int b2l_gl_cmp_sink(void *ctx, uint64_t off, const void *buf, size_t n)
+{
+    static char have[16384];
+    struct b2l_gl_cmp *c = ctx;
+    for (size_t done = 0; !c->differs && done < n;) {
+        size_t k = n - done < sizeof(have) ? n - done : sizeof(have);
+        int resid = 0;
+        int e = vn_rdwr(UIO_READ, c->vp, have, (int)k, (off_t)(off + done), UIO_SYSSPACE, IO_NOAUTH, kauth_cred_get(), &resid, current_proc());
+        if (e || resid || memcmp(have, (const char *)buf + done, k)) c->differs = 1;
+        done += k;
+    }
+    return 0;
+}
+static int b2l_gl_same(const char *src, const char *final, vfs_context_t ctx)
+{
+    struct b2l_gl_cmp c = { NULL, 0 };
+    struct vnode_attr va;
+    uint64_t size = 0;
+    if (vnode_open(final, FREAD, 0, VNODE_LOOKUP_NOFOLLOW_ANY, &c.vp, ctx)) return 0;
+    int e = b2l_system_file_copy(src, b2l_gl_cmp_sink, &c, &size);
+    VATTR_INIT(&va); VATTR_WANTED(&va, va_data_size);
+    if (!e && !vnode_getattr(c.vp, &va, ctx) && va.va_data_size != size) c.differs = 1;
+    vnode_close(c.vp, FREAD, ctx);
+    return e ? (e == ENOENT) : !c.differs;   /* not on SYSTEM: keep what is there */
+}
 static int b2l_gl_publish_one(const char *src, const char *final, const char *staging, vfs_context_t ctx)
 {
     vnode_t vp = NULL;
     uint64_t size = 0;
-    if (b2l_layout_exists(final, ctx) == 1) { printf("B2L GL: %s present\n", final); return 0; }
+    int replace = 0;
+    if (b2l_layout_exists(final, ctx) == 1) {
+        if (b2l_gl_same(src, final, ctx)) { printf("B2L GL: %s present\n", final); return 0; }
+        replace = 1;
+    }
     int error = vnode_open(staging, FREAD | FWRITE | O_CREAT | O_TRUNC, 0755, VNODE_LOOKUP_NOFOLLOW_ANY, &vp, ctx);
     if (error) return error;
     error = b2l_system_file_copy(src, b2l_gl_sink, vp, &size);
     if (!error) error = VNOP_FSYNC(vp, MNT_WAIT, ctx);
+    if (!error && replace) {
+        error = b2l_kernel_rename(staging, final, ctx);
+        if (!error) error = VFS_SYNC(vnode_mount(vp), MNT_WAIT, ctx);
+        int ce = vnode_close(vp, FREAD | FWRITE, ctx);
+        printf("B2L GL: %s -> %s (%llu bytes) replaced, error=%d\n", src, final, (unsigned long long)size, error ? error : ce);
+        return error ? error : ce;
+    }
     if (!error) {
         struct nameidata nd; NDINIT(&nd, CREATE, OP_LINK, LOCKPARENT, UIO_SYSSPACE, CAST_USER_ADDR_T(final), ctx); nd.ni_flag |= NAMEI_NOFOLLOW_ANY;
         error = namei(&nd);

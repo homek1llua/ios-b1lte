@@ -17,7 +17,7 @@
 
 #include <sys/dirent.h>
 
-#define B2L_JB_MARKER "/private/var/db/b2l-jb-v2"   /* v2 (build 0024): apt's lists and archives dirs, extracted again */
+#define B2L_JB_MARKER "/private/var/db/b2l-jb-v3"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists */
 
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
 
@@ -553,7 +553,7 @@ b2l_jb_ls_reset(vfs_context_t ctx)
  * container under the roots below (and /private/var/mobile/Library/Caches/) is set aside once, so the icons are drawn
  * again by the Metal compiler that now takes those pipelines (marker /private/var/db/b2l-icons-v1).
  */
-#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v1"
+#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v2"   /* v2 (0025): again, now that the new compiler arrives */
 
 static int
 b2l_icons_name(const char *n)
