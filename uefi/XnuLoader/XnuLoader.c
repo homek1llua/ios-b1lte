@@ -378,9 +378,11 @@ STATIC EFI_STATUS B2lBootXnu(EFI_HANDLE ImageHandle)
     /* Bit zero requests a physical framebuffer mapping even after VM init. */
     Args->video.base |= 1;
     AsciiStrCpyS(Args->command_line, sizeof(Args->command_line),
-                "-v debug=0x14e serial=3 cpus=8 keepsyms=1 -enable_kprintf_spam "
+                /* B1L-0015 (beyond1lte): no -enable_kprintf_spam, b2l_diag off, persistent log
+                 * written every 5 s instead of every second, to take load off the CPU. */
+                "-v debug=0x14e serial=3 cpus=8 keepsyms=1 "
                 "rd=b2l-userdata b2l_root_rw=1 b2l_unsealed_root=1 b2l_arm64e_compat=1 b2l_pacga_siphash=1 b2l_pacga_pair=1 cs_enforcement_disable=1 "
-                "launchd_unsecure_cache=1 b2l_system_log=1 b2l_native_cache=1 b2l_diag=1 b2l_userspace_bootstrap=1 exception_log_max_pid=4096"
+                "launchd_unsecure_cache=1 b2l_system_log=1 b2l_native_cache=1 b2l_log_sec=5 b2l_userspace_bootstrap=1 exception_log_max_pid=4096"
                 B2L_FB_LOGICAL_ARGS);
     Entry = Base + Mach.entry - Mach.virtual_base;
     if(Kernel){FreePool(Kernel); Kernel = NULL;}
