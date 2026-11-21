@@ -1,0 +1,36 @@
+diff --git a/bsd/kern/kern_sig.c b/bsd/kern/kern_sig.c
+index c25ed3fb..11ff948c 100644
+--- a/bsd/kern/kern_sig.c
++++ b/bsd/kern/kern_sig.c
+@@ -1586,6 +1586,31 @@ terminate_with_payload_internal(struct proc *cur_proc, int target_pid, uint32_t
+ 		return EPERM;
+ 	}
+ 
++#if defined(ARM64_BOARD_CONFIG_B2L)
++	/*
++	 * B1L-0018: SpringBoard's watchdog (namespace SPRINGBOARD, 0x8badf00d) killed Settings, Wallet and Messages five
++	 * times in six minutes on the S10: they are slow to launch or answer here (emulated pointer signing, a young
++	 * GPU driver), not hung. Spared: the app carries on. A user's force-quit uses another code and still kills.
++	 * Boot-arg b2l_spare_watchdog=0: killed as on an iPhone.
++	 */
++	if (reason_namespace == OS_REASON_SPRINGBOARD && reason_code == 0x8badf00dULL &&
++	    target_pid != proc_getpid(cur_proc)) {
++		extern boolean_t PE_parse_boot_argn(const char *arg_string, void *arg_ptr, int max_arg);
++		static int spare = -1;
++		if (spare < 0) {
++			int v = 1;
++			PE_parse_boot_argn("b2l_spare_watchdog", &v, sizeof(v));
++			spare = v != 0;
++		}
++		if (spare) {
++			printf("B2L: watchdog kill of %s [%d] by %s spared\n", proc_best_name(target_proc), target_pid,
++			    proc_best_name(cur_proc));
++			proc_rele(target_proc);
++			return 0;
++		}
++	}
++#endif
++
+ 	if (target_pid != proc_getpid(cur_proc)) {
+ 		/*
+ 		 * FLAG_ABORT should only be set on terminate_with_reason(getpid()) that
