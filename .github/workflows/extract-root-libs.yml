@@ -1,0 +1,43 @@
+name: Extract root FS Metal libraries
+# S10 build 0025: which Metal/Mesa libraries does the root FS image (userdata) carry? Until 0025 the kernel never
+# replaced a library already there, so these are what the phone drew with before.
+on:
+  workflow_dispatch:
+  push:
+    branches: [extract-root-libs]
+env:
+  PRIVATE_REPO: homek1llua/b1l-private
+  RELEASE_TAG: ios-images-23G90-r1
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost /usr/share/swift
+          df -h /
+      - name: Stream userdata image
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
+        run: |
+          sudo apt-get install -y p7zip-full > /dev/null
+          mkdir -p /mnt/u 2>/dev/null || true
+          cd "$RUNNER_TEMP"
+          gh api "repos/$PRIVATE_REPO/releases/tags/$RELEASE_TAG" -q '.assets[]|select(.name|startswith("userdata.tar.gz.part"))|(.id|tostring)+" "+.name' | sort -k2 > parts.txt
+          cat parts.txt
+          while read id name; do gh api -H "Accept: application/octet-stream" "repos/$PRIVATE_REPO/releases/assets/$id"; done < parts.txt | tar -xzSf -
+          ls -ls; df -h .
+      - name: List and extract
+        run: |
+          cd "$RUNNER_TEMP"
+          img=$(ls *.img | head -1)
+          7z l "$img" > list.txt || true
+          grep -i "b2l-metal\|B2LMetal\|b2l-gl" list.txt | head -100
+          mkdir -p out
+          7z x "$img" -oout -r '*b2l-metal*' '*B2LMetal*' '*b2l-gl*' -y > /dev/null || true
+          find out -type f -exec ls -l {} \; ; find out -type f -exec sha256sum {} \;
+          cp list.txt out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: root-libs
+          path: ${{ runner.temp }}/out
