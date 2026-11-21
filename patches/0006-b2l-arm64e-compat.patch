@@ -30,19 +30,20 @@
  			case CPU_SUBTYPE_ARM64_V8:
  				return 10;
  			case CPU_SUBTYPE_ARM64_ALL:
-@@ -202,3 +218,14 @@
+@@ -202,3 +218,15 @@
  
  	return 0;
  }
 +
 +#if defined(ARM64_BOARD_CONFIG_B2L)
-+/* BSD-side process metadata access; no task flag or host subtype fabrication. */
++/* BSD-side process metadata access; no task flag or host subtype fabrication.
++ * S10 build 0023: every 64-bit ARM process, not only arm64e ones. A plain arm64 app (Sileo, Procursus' tools) runs
++ * against the same arm64e shared cache, and died on its first RETAB (EXC_BAD_INSTRUCTION 0xd65f0fff). */
 +bool
 +b2l_arm64e_current_task(void)
 +{
 +	proc_t process = current_proc();
-+	return process && process->p_cputype == CPU_TYPE_ARM64 &&
-+	       (process->p_cpusubtype & ~CPU_SUBTYPE_MASK) == CPU_SUBTYPE_ARM64E;
++	return process && process->p_cputype == CPU_TYPE_ARM64;
 +}
 +#endif
 --- a/bsd/kern/kern_exec.c
