@@ -2,9 +2,17 @@ name: Build SYSTEM image
 
 # SYSTEM image only, for a given partition size, matched to an existing iOS root
 # through its 4 KiB header (roots/<release>/root-header.bin in the private repo).
+# With metal=true, a first job builds the GPU userspace (Mesa panfrost + Scion's Metal driver for the
+# Mali, sets b2l-metal-v5 and b2l-metal-v95 that the kernel publishes) and SYSTEM gets them too.
 on:
   push:
     branches: [system-image]
+  workflow_dispatch:
+    inputs:
+      metal:
+        description: Build and include the Metal GPU sets
+        type: boolean
+        default: true
 
 env:
   PRIVATE_REPO: homek1llua/b1l-private
@@ -13,12 +21,62 @@ env:
   CACHE_MIB: "4600"            # native cache; leaves ~1 GiB of HFS free
 
 jobs:
+  metal:
+    if: ${{ inputs.metal }}
+    runs-on: macos-26-intel
+    timeout-minutes: 120
+    env:
+      SCION_COMMIT: a6f4bc38aa244359cd365c976244a88c9d6b3304
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          brew install meson ninja bison flex
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          xcodebuild -version; xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Scion reference (Mesa patches, AIR front end)
+        run: |
+          d="$HOME/Developer/s10-port/ref-scion/hackios-xnu-kernel"; mkdir -p "$d"
+          git -C "$d" init -q; git -C "$d" remote add origin https://github.com/Scion-Project/hackios-xnu-kernel
+          git -C "$d" fetch -q --depth 1 origin "$SCION_COMMIT"; git -C "$d" checkout -q FETCH_HEAD
+          [[ "$(git -C "$d" rev-parse HEAD)" == "$SCION_COMMIT" ]]
+
+      - name: Mesa (softpipe, panfrost) and libhakiosair
+        run: bash scripts/build-mesa.sh || { tail -60 ~/Developer/s10-port/build-mesa/meson-setup.log ~/Developer/s10-port/build-mesa/ninja.log; exit 1; }
+
+      - name: Metal sets
+        run: |
+          V=b2l-metal-v5 BUNDLE=B2LMetalV3 bash scripts/build-metal.sh
+          V=b2l-metal-v95 bash scripts/build-metal-scion.sh
+          ls -l ~/Developer/s10-port/build-metal/*/
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-sets
+          path: |
+            ~/Developer/s10-port/build-metal/b2l-metal-v5
+            ~/Developer/s10-port/build-metal/b2l-metal-v95
+
   system:
+    needs: metal
+    if: ${{ always() && (needs.metal.result == 'success' || needs.metal.result == 'skipped') }}
     runs-on: macos-26-intel
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Metal sets (SYSTEM:/b2l-metal-v5, /b2l-metal-v95)
+        if: ${{ inputs.metal }}
+        uses: actions/download-artifact@v4
+        with:
+          name: metal-sets
+          path: ${{ runner.temp }}/extra
 
       - name: Root header
         env:
