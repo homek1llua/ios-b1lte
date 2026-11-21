@@ -379,10 +379,13 @@ STATIC EFI_STATUS B2lBootXnu(EFI_HANDLE ImageHandle)
     Args->video.base |= 1;
     AsciiStrCpyS(Args->command_line, sizeof(Args->command_line),
                 /* B1L-0015 (beyond1lte): no -enable_kprintf_spam, b2l_diag off, persistent log
-                 * written every 5 s instead of every second, to take load off the CPU. */
+                 * written every 5 s instead of every second, to take load off the CPU.
+                 * B1L-0017: throttling from 76 C (was 65; the M4 cores sat at 936 MHz of 2080 at 65-71 C),
+                 * back up under 70, floor at 90 (Samsung's own big-cluster trips: 76 on, 95 hot); b2l_perf=1
+                 * for the per-call kernel time lines. */
                 "-v debug=0x14e serial=3 cpus=8 keepsyms=1 "
                 "rd=b2l-userdata b2l_root_rw=1 b2l_unsealed_root=1 b2l_arm64e_compat=1 b2l_pacga_siphash=1 b2l_pacga_pair=1 cs_enforcement_disable=1 "
-                "launchd_unsecure_cache=1 b2l_system_log=1 b2l_native_cache=1 b2l_log_sec=5 b2l_userspace_bootstrap=1 exception_log_max_pid=4096"
+                "launchd_unsecure_cache=1 b2l_system_log=1 b2l_native_cache=1 b2l_log_sec=5 b2l_perf=1 b2l_thr_hi=76 b2l_thr_lo=70 b2l_thr_crit=90 b2l_userspace_bootstrap=1 exception_log_max_pid=4096"
                 B2L_FB_LOGICAL_ARGS);
     Entry = Base + Mach.entry - Mach.virtual_base;
     if(Kernel){FreePool(Kernel); Kernel = NULL;}
