@@ -95,7 +95,7 @@ jobs:
           } | sudo tee -a "$st" > /dev/null
           dpkg-deb -c sileo.deb | awk '{print $6}' | sed 's|^\./|/|; s|/$||; s|^/var/jb/Applications/Sileo.app|/Applications/Sileo.app|' | grep -v '^$' | sudo tee s/var/jb/Library/dpkg/info/org.coolstar.sileo.list > /dev/null
           grep -c '^Package:' "$st"
-          sudo ls -la s/Applications/Sileo.app | head; sudo find s -type f -perm -4000
+          sudo ls -la s/Applications/Sileo.app/giveMeRoot || true; sudo find s -type f -perm -4000
           mkdir -p out/b2l-jb
           sudo tar --format=gnu --numeric-owner -cpf jb.tar -C s var Applications
           ls -l jb.tar
