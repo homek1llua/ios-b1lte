@@ -1,0 +1,23 @@
+diff --git a/bsd/kern/kern_mman.c b/bsd/kern/kern_mman.c
+index d3d99936..41e22b73 100644
+--- a/bsd/kern/kern_mman.c
++++ b/bsd/kern/kern_mman.c
+@@ -481,6 +481,18 @@ mmap(proc_t p, struct mmap_args *uap, user_addr_t *retval)
+ 		return EPERM;
+ 	}
+ 
++#if defined(ARM64_BOARD_CONFIG_B2L)
++	/*
++	 * B1L-0109 (from B1L-0223): the system freezes within a second of WebKit's JIT starting
++	 * to run (Safari). Refuse MAP_JIT to WebKit's processes with the same EPERM as a process
++	 * without the JIT entitlement, so JavaScriptCore stays on its interpreters.
++	 */
++	if ((flags & MAP_JIT) && strncmp(proc_best_name(p), "com.apple.WebKit", 16) == 0) {
++		printf("B2L: no JIT for %s [%d]\n", proc_best_name(p), proc_pid(p));
++		return EPERM;
++	}
++#endif
++
+ 	if (flags & MAP_ANON) {
+ 		maxprot = VM_PROT_ALL;
+ #if CONFIG_MACF
