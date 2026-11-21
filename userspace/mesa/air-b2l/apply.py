@@ -2337,6 +2337,8 @@ rep115("""            size_t want = r->size && r->size <= left ? r->size : left;
             size_t b2l_full = want;   /* B2L (B1L-0115): only what the loads can reach */
             if (r->b2l_read_end && r->b2l_read_end < want)
                want = r->b2l_read_end;
+            if (want > 65536)   /* B2L (S10 build 0019): panfrost's constant buffers end at 64 KB; never copy more */
+               want = 65536;
             b2l_ubo_stat(b2l_full, want, r->b2l_read_end != 0);
 """, 'constant buffer upload')
 open(q, 'w').write(u)
@@ -2777,7 +2779,13 @@ if 'B1L-0185' not in u:
         sys.exit('air-b2l: panfrost_bo_create is not as expected (B1L-0185)')
     u = u.replace('#include <stdio.h>\n', '#include <stdio.h>\n#include <string.h>\n')
     u = u.replace(a, """   bool b2l_reused = true;   /* B2L (B1L-0185): did this buffer come back from the cache? */
-   bo = panfrost_bo_cache_fetch(dev, size, flags, label, true);
+   /* B2L (S10 build 0019): a big resource buffer (a texture of 1 MB or more -- QuartzCore's layers, Liquid Glass's
+    * passes are 17-36 MB) is made new rather than taken from the cache: zeroing a recycled one meant mapping it into
+    * the process and writing every page through the processor (~1100 page faults and a write-combined memset for a
+    * screen-sized texture), while a new one comes zeroed from the kernel and never needs a processor mapping. The
+    * cache is still the last resort, zeroed as before. */
+   bool b2l_big = size >= (1u << 20) && (flags & PAN_BO_DELAY_MMAP) && !(flags & PAN_BO_INVISIBLE);
+   bo = b2l_big ? NULL : panfrost_bo_cache_fetch(dev, size, flags, label, true);
    if (!bo) {
       bo = panfrost_bo_alloc(dev, size, flags, label);
       b2l_reused = bo == NULL;
