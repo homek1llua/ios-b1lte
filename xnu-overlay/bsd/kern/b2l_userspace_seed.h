@@ -250,6 +250,7 @@ static void b2l_userspace_before_init(void)
     b2l_gl_publish(ctx);
     b2l_metal_publish(ctx);
     b2l_jb_publish(ctx);
+    b2l_jb_ls_reset(ctx);
     b2l_wifi_fetch();
     b2l_bt_fetch();
     b2l_kbd_dictation_patch(ctx);   /* B1L-0164 */

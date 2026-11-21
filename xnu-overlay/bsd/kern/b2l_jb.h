@@ -15,6 +15,8 @@
 #ifndef B2L_JB_H
 #define B2L_JB_H
 
+#include <sys/dirent.h>
+
 #define B2L_JB_MARKER "/private/var/db/b2l-jb-v1"
 
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
@@ -449,6 +451,74 @@ b2l_jb_publish(vfs_context_t ctx)
 		e = b2l_layout_marker(B2L_JB_MARKER, ctx);
 	}
 	printf("B2L JB: done, marker error=%d\n", e);
+}
+
+/*
+ * S10 build 0021: LaunchServices' store is not named as b2l_apps_layout expected any more (0019's log: both names
+ * absent), so lsd never rebuilt and Sileo did not appear. Every *.csstore in lsd's cache directory is set aside
+ * instead (logging each name in the directory), once, marker /private/var/db/b2l-jb-ls-v1.
+ */
+#define B2L_JB_LS_MARKER "/private/var/db/b2l-jb-ls-v1"
+static void
+b2l_jb_ls_reset(vfs_context_t ctx)
+{
+	static char buf[4096], names[32][256], from[MAXPATHLEN], to[MAXPATHLEN];
+	vnode_t dvp = NULL;
+	unsigned found = 0, moved = 0;
+	int eof = 0, e;
+
+	if (b2l_layout_exists(B2L_JB_MARKER, ctx) != 1 || b2l_layout_exists(B2L_JB_LS_MARKER, ctx) == 1) {
+		return;
+	}
+	e = vnode_lookup(B2L_LAYOUT_LS_DIR, 0, &dvp, ctx);
+	if (e) {
+		printf("B2L JB LS: %s error=%d\n", B2L_LAYOUT_LS_DIR, e);
+		return;
+	}
+	uio_t uio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
+	off_t off = 0;
+	while (!e && !eof && uio) {
+		int count = 0;
+		uio_reset(uio, off, UIO_SYSSPACE, UIO_READ);
+		uio_addiov(uio, CAST_USER_ADDR_T(buf), sizeof(buf));
+		e = VNOP_READDIR(dvp, uio, 0, &eof, &count, ctx);
+		size_t got = sizeof(buf) - (size_t)uio_resid(uio);
+		if (e || got == 0) {
+			break;
+		}
+		off = uio_offset(uio);
+		for (size_t pos = 0; pos + __builtin_offsetof(struct dirent, d_name) < got;) {
+			struct dirent *d = (struct dirent *)(void *)(buf + pos);
+			if (d->d_reclen == 0) {
+				break;
+			}
+			if (d->d_name[0] != '.') {
+				printf("B2L JB LS: entry %s\n", d->d_name);
+				size_t n = strlen(d->d_name);
+				if (n > 8 && !strcmp(d->d_name + n - 8, ".csstore") && found < 32) {
+					strlcpy(names[found++], d->d_name, sizeof(names[0]));
+				}
+			}
+			pos += d->d_reclen;
+		}
+	}
+	if (uio) {
+		uio_free(uio);
+	}
+	vnode_put(dvp);
+	for (unsigned i = 0; i < found; i++) {
+		if (!b2l_layout_join(from, sizeof(from), B2L_LAYOUT_LS_DIR, names[i], NULL) &&
+		    !b2l_layout_join(to, sizeof(to), B2L_LAYOUT_LS_DIR, names[i], ".b2l-before-jb")) {
+			int r = b2l_layout_move(from, to, ctx);
+			moved += r == 0;
+			printf("B2L JB LS: %s %s\n", names[i], r == 0 ? "set aside" : r == 1 ? "kept" : "error");
+		}
+	}
+	e = moved ? VFS_SYNC(vnode_mount(rootvnode), MNT_WAIT, ctx) : 0;
+	if (moved && !e) {
+		e = b2l_layout_marker(B2L_JB_LS_MARKER, ctx);
+	}
+	printf("B2L JB LS: %u stores, %u set aside, error=%d\n", found, moved, e);
 }
 
 #endif /* B2L_JB_H */
