@@ -1,0 +1,24 @@
+name: Probe jailbreak sources
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for u in \
+            https://apt.procurs.us/bootstraps/2000/bootstrap-ssh-iphoneos-arm64.tar.zst \
+            https://apt.procurs.us/bootstraps/2000/bootstrap-iphoneos-arm64.tar.zst \
+            https://apt.procurs.us/bootstraps/1900/bootstrap-ssh-iphoneos-arm64.tar.zst \
+            https://apt.procurs.us/bootstraps/1800/bootstrap-iphoneos-arm64.tar.zst \
+            https://static.palera.in/rootless/bootstrap-2000.tar.zst \
+            https://static.palera.in/rootless/bootstrap-1900.tar.zst \
+            https://static.palera.in/rootless/bootstrap-1800.tar.zst; do
+            echo "$(curl -s -o /dev/null -w '%{http_code} %{size_download}' -L "$u") $u"
+          done
+          gh api repos/Sileo/Sileo/releases -q '.[0:3][] | .tag_name + " " + ([.assets[] | .name + "=" + .browser_download_url] | join(" "))' || true
+          gh api repos/opa334/Dopamine/releases/latest -q '.tag_name' || true
+          curl -sL https://apt.procurs.us/dists/iphoneos-arm64-rootless/2000/main/binary-iphoneos-arm64/Packages.zst -o p.zst && zstd -dc p.zst | grep -A3 -m3 "^Package: sileo\|^Package: newterm" || true
+          curl -s -o /dev/null -w '%{http_code}\n' https://apt.procurs.us/dists/iphoneos-arm64-rootless/2000/Release
+          curl -s -o /dev/null -w '%{http_code}\n' https://apt.procurs.us/dists/iphoneos-arm64/2000/Release
