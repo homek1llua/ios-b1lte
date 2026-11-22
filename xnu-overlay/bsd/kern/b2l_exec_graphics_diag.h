@@ -182,7 +182,9 @@ b2l_exec_block_loops(struct image_params *imgp)
 	{	/* B1L-0111: imagent (iMessage/FaceTime: re-registers with Apple for ever without a SIM or an account) and
 		 * dasd (the background-task scheduler: millions of corecrypto PAC traps a boot) -- neither draws anything.
 		 * Owner's decision. Kill switch: boot-arg b2l_block_daemons=0. */
-		static const char *const daemons[] = { "/imagent", "/usr/libexec/dasd" };
+		/* S10 build 0032: dasd allowed again -- background transfers (nsurlsessiond: Sileo's package downloads, Safari's
+		 * downloads) wait for it to schedule them, and never started. Its PAC traps are the price. */
+		static const char *const daemons[] = { "/imagent" };
 		static unsigned told;
 		int block = 1;
 		PE_parse_boot_argn("b2l_block_daemons", &block, sizeof(block));
