@@ -556,7 +556,7 @@ b2l_jb_ls_reset(vfs_context_t ctx)
  * container under the roots below (and /private/var/mobile/Library/Caches/) is set aside once, so the icons are drawn
  * again by the Metal compiler that now takes those pipelines (marker /private/var/db/b2l-icons-v1).
  */
-#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v3"   /* v2 (0025): again, now that the new compiler arrives */
+#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v4"   /* v2 (0025): again, now that the new compiler arrives */
 
 static int
 b2l_icons_name(const char *n)
@@ -588,7 +588,7 @@ b2l_icons_dir(const char *dir, vfs_context_t ctx)
 			continue;
 		}
 		if (!b2l_layout_join(from, sizeof(from), dir, files[f], NULL) &&
-		    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-0027")) {
+		    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-0028")) {
 			int rr = b2l_layout_move(from, to, ctx);
 			moved += rr == 0;
 			printf("B2L ICONS: %s%s %s\n", dir, files[f], rr == 0 ? "set aside" : rr == 1 ? "kept" : "error");

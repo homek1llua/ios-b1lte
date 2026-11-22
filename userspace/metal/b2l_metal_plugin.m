@@ -38,7 +38,10 @@ psay(const char *format, ...)
 {
 	/* B2L (B1L-0185): the window server, and the processes that draw icons, widgets and Control Center glyphs
 	 * offscreen and get nothing on screen without a GPU (SpringBoard, chronod, iconservicesagent) */
-	static const char *const allowed[] = { "backboardd", "SpringBoard", "chronod", "iconservicesagent" };
+	/* S10 build 0028: backboardd only (upstream B1L-0269). Without a Mali, SpringBoard and iconservicesagent draw the
+	 * app icons with Apple's own processor path, and right; through our translator they were flat squares. The price
+	 * (upstream's 0184): the Clock and Calendar icons, widgets and some Control Center glyphs stay empty. */
+	static const char *const allowed[] = { "backboardd" };
 	const char *me = getprogname();
 	bool ok = false;
 	for (unsigned i = 0; me != NULL && i < sizeof(allowed) / sizeof(allowed[0]); i++)
