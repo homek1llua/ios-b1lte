@@ -71,6 +71,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Bootstrap and Sileo
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
         run: |
           set -euo pipefail
           curl -sfL -o bs.tar.zst https://static.palera.in/rootless/bootstrap-2000.tar.zst
@@ -105,6 +107,13 @@ jobs:
           sudo mkdir -p s/var/jb/var/lib/apt/sileolists && sudo chown 501:501 s/var/jb/var/lib/apt/sileolists
           echo 'APT::Sandbox::User "root";' | sudo tee s/var/jb/etc/apt/apt.conf.d/00b2l-sandbox > /dev/null
           ls s/var/jb/etc/apt/sources.list.d/ && sudo cat s/var/jb/etc/apt/sources.list.d/* || true
+          # S10 build 0026: Discord 354.0 (the user's decrypted IPA, b1l-private apps/) as a system app beside Sileo
+          for i in 0 1 2; do gh api "repos/$PRIVATE_REPO/contents/apps/discord-354.0.ipa.part$i" -H "Accept: application/vnd.github.raw"; done > discord.ipa
+          echo "$(gh api "repos/$PRIVATE_REPO/contents/apps/discord-354.0.ipa.sha256" -H "Accept: application/vnd.github.raw")  discord.ipa" | sha256sum -c
+          mkdir dipa && unzip -q discord.ipa -d dipa
+          sudo mv dipa/Payload/Discord.app s/Applications/Discord.app
+          sudo chown -R 0:0 s/Applications/Discord.app && sudo chmod -R u+rwX,go+rX s/Applications/Discord.app
+          sudo du -sh s/Applications/Discord.app
           mkdir -p out/b2l-jb
           sudo tar --format=gnu --numeric-owner -cpf jb.tar -C s var Applications
           ls -l jb.tar

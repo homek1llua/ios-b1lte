@@ -17,7 +17,7 @@
 
 #include <sys/dirent.h>
 
-#define B2L_JB_MARKER "/private/var/db/b2l-jb-v3"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists */
+#define B2L_JB_MARKER "/private/var/db/b2l-jb-v4"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists; v4 (0026): Discord */
 
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
 
@@ -86,6 +86,9 @@ b2l_jb_map(const char *name, char *out, size_t cap)
 		return (size_t)snprintf(out, cap, "/private/%s", name) < cap;
 	}
 	if (!strncmp(name, "Applications/Sileo.app", 22) && (name[22] == 0 || name[22] == '/')) {
+		return (size_t)snprintf(out, cap, "/%s", name) < cap;
+	}
+	if (!strncmp(name, "Applications/Discord.app", 24) && (name[24] == 0 || name[24] == '/')) {   /* S10 build 0026 */
 		return (size_t)snprintf(out, cap, "/%s", name) < cap;
 	}
 	return 0;
@@ -460,7 +463,7 @@ b2l_jb_publish(vfs_context_t ctx)
  * /private/var/mobile/Containers/Data/InternalDaemon/ and /private/var/containers/Data/System/ is set aside instead,
  * once (marker /private/var/db/b2l-jb-ls-v1; each container and store is logged).
  */
-#define B2L_JB_LS_MARKER "/private/var/db/b2l-jb-ls-v1"
+#define B2L_JB_LS_MARKER "/private/var/db/b2l-jb-ls-v2"   /* v2 (0026): again, for Discord */
 
 /* the names in a directory (no dot files), at most max of them */
 static unsigned
@@ -532,7 +535,7 @@ b2l_jb_ls_reset(vfs_context_t ctx)
 				}
 				stores++;
 				if (!b2l_layout_join(from, sizeof(from), dir, files[f], NULL) &&
-				    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-before-jb")) {
+				    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-0026")) {
 					int rr = b2l_layout_move(from, to, ctx);
 					moved += rr == 0;
 					printf("B2L JB LS: %s%s %s\n", dir, files[f], rr == 0 ? "set aside" : rr == 1 ? "kept" : "error");
