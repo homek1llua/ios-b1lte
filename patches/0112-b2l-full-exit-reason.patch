@@ -1,8 +1,27 @@
 diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
-index 452467b..713b506 100644
+index 452467b..241acf9 100644
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
-@@ -2182,6 +2182,19 @@ proc_prepareexit(proc_t p, int rv, boolean_t perf_notify)
+@@ -2060,7 +2060,17 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
+ 	    p != current_proc() || (!rv && !ut->uu_exception)) return;
+ 	for (slot = 0; slot < 14; slot++)
+ 		if (!strncmp(p->p_comm, names[slot], strlen(names[slot]))) break;
+-	if (slot == 14 || __atomic_fetch_add(&samples[slot], 1, __ATOMIC_RELAXED) >= 4) return;
++#if defined(ARM64_BOARD_CONFIG_B2L)
++	/* S10 build 0032: any other process too (Photos, PhotosPicker, fileproviderd, PosterBoard aborted with no detail),
++	 * 64 crashes a boot at most */
++	static unsigned b2l_other_crashes;
++	if (slot == 14) {
++		if (__atomic_fetch_add(&b2l_other_crashes, 1, __ATOMIC_RELAXED) >= 64) return;
++	} else
++#else
++	if (slot == 14) return;
++#endif
++	if (__atomic_fetch_add(&samples[slot], 1, __ATOMIC_RELAXED) >= 4) return;
+ 	const char *desc = exit_reason_get_string_desc(p->p_exit_reason);
+ 	b2l_early_trace("B2L CRASH: %s[%d] status=0x%x exception=%u code=0x%llx sub=0x%llx\n",
+ 	    p->p_comm, proc_getpid(p), rv, ut->uu_exception,
+@@ -2182,6 +2192,19 @@ proc_prepareexit(proc_t p, int rv, boolean_t perf_notify)
  				    "pid: %d -- process name: %s -- exit reason namespace: %d -- subcode: 0x%llx -- description: %s",
  				    proc_getpid(p), proc_name, p->p_exit_reason->osr_namespace, p->p_exit_reason->osr_code,
  				    exit_reason_get_string_desc(p->p_exit_reason));
