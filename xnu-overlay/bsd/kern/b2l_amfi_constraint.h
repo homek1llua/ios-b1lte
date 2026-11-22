@@ -4,6 +4,7 @@
 #ifndef B2L_AMFI_CONSTRAINT_H
 #define B2L_AMFI_CONSTRAINT_H
 #include "b2l_lwcr.h"
+extern vnode_t proc_getexecutablevnode(proc_t);   /* S10 build 0029 (sys/proc_private.h) */
 #define B2L_AMFI_CONSTRAINT_MAX 0x4000u
 #define B2L_AMFI_CONSTRAINT_RESULT_SIZE 0x404u
 /* Observed stock AMFI result for unsupported running-process constraints. */
@@ -53,7 +54,24 @@ b2l_amfi_constraint_syscall(struct proc *process, int operation, user_addr_t arg
         uint64_t flags = (1ull << 0) | (1ull << 1) | (1ull << 5);
         int me = proc_getpid(process);
         if ((b2l_sb_dyld_pid < 0 || me != b2l_sb_dyld_pid) && (b2l_bb_dyld_pid < 0 || me != b2l_bb_dyld_pid) &&
-            (b2l_app_dyld_pid < 0 || me != b2l_app_dyld_pid)) return ENOTSUP;
+            (b2l_app_dyld_pid < 0 || me != b2l_app_dyld_pid)) {
+            /* S10 build 0029: an app of its own (/Applications/X.app, an installed app's bundle, /var/jb) may load the
+             * frameworks it carries: @rpath / @executable_path (AT_PATH | FALLBACK_PATHS), what AMFI gives any iOS app.
+             * 0028's log: Discord died in dyld, "(security policy does not allow @ path expansion)" for RiveRuntime. */
+            static char b2l_path[MAXPATHLEN];
+            vnode_t b2l_vp = proc_getexecutablevnode(process);
+            int b2l_len = sizeof(b2l_path), b2l_app = 0;
+            if (b2l_vp != NULLVP) {
+                if (!vn_getpath(b2l_vp, b2l_path, &b2l_len)) {
+                    b2l_app = (!strncmp(b2l_path, "/Applications/", 14) && strncmp(b2l_path, "/Applications/Sileo.app/", 24)) ||
+                        !strncmp(b2l_path, "/private/var/containers/Bundle/", 31) ||
+                        !strncmp(b2l_path, "/private/var/jb/", 16);
+                }
+                vnode_put(b2l_vp);
+            }
+            if (!b2l_app) return ENOTSUP;
+            flags = (1ull << 0) | (1ull << 3);
+        }
         int derr = copyin(argument, &dargs, sizeof(dargs));
         if (derr) return derr;
         printf("B2L AMFI: dyld policy for pid %d: 0x%llx\n", proc_getpid(process), flags);
