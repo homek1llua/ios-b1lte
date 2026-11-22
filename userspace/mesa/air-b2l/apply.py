@@ -2831,7 +2831,9 @@ b2l_rb_on(void)
    static int on = -1;
    if (on < 0) {
       const char *me = getprogname();
-      on = me && !strcmp(me, "iconservicesagent");
+      /* S10 build 0027: SpringBoard too -- 0026's log: iconservicesagent no longer refused anything, SpringBoard
+       * still refused 9 pipelines (the icons' masks and glass are drawn there) */
+      on = me && (!strcmp(me, "iconservicesagent") || !strcmp(me, "SpringBoard"));
    }
    return on;
 }

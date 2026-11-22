@@ -17,7 +17,7 @@
 
 #include <sys/dirent.h>
 
-#define B2L_JB_MARKER "/private/var/db/b2l-jb-v4"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists; v4 (0026): Discord */
+#define B2L_JB_MARKER "/private/var/db/b2l-jb-v5"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists; v4 (0026): Discord; v5 (0027): Discord weak-linked, apt insecure repos */
 
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
 
@@ -556,7 +556,7 @@ b2l_jb_ls_reset(vfs_context_t ctx)
  * container under the roots below (and /private/var/mobile/Library/Caches/) is set aside once, so the icons are drawn
  * again by the Metal compiler that now takes those pipelines (marker /private/var/db/b2l-icons-v1).
  */
-#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v2"   /* v2 (0025): again, now that the new compiler arrives */
+#define B2L_ICONS_MARKER "/private/var/db/b2l-icons-v3"   /* v2 (0025): again, now that the new compiler arrives */
 
 static int
 b2l_icons_name(const char *n)
@@ -566,8 +566,12 @@ b2l_icons_name(const char *n)
 		size_t kl = strlen(keys[k]);
 		for (const char *s = n; *s; s++) {
 			if (!strncmp(s, keys[k], kl)) {
-				size_t nl = strlen(n), sl = sizeof(".b2l-0024") - 1;
-				return nl < sl || strcmp(n + nl - sl, ".b2l-0024") != 0;
+				for (const char *q = n; *q; q++) {   /* one set aside before (".b2l-0024", ".b2l-0027", ...) */
+					if (!strncmp(q, ".b2l-", 5)) {
+						return 0;
+					}
+				}
+				return 1;
 			}
 		}
 	}
@@ -584,7 +588,7 @@ b2l_icons_dir(const char *dir, vfs_context_t ctx)
 			continue;
 		}
 		if (!b2l_layout_join(from, sizeof(from), dir, files[f], NULL) &&
-		    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-0024")) {
+		    !b2l_layout_join(to, sizeof(to), dir, files[f], ".b2l-0027")) {
 			int rr = b2l_layout_move(from, to, ctx);
 			moved += rr == 0;
 			printf("B2L ICONS: %s%s %s\n", dir, files[f], rr == 0 ? "set aside" : rr == 1 ? "kept" : "error");
