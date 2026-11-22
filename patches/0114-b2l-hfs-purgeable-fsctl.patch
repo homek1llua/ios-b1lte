@@ -1,0 +1,33 @@
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+index 17449a9..377034a 100644
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -13703,6 +13703,28 @@ unlock:
+ 		}
+ 		/* Invoke the filesystem-specific code */
+ 		error = VNOP_IOCTL(vp, cmd, data, (int)options, ctx);
++#if defined(ARM64_BOARD_CONFIG_B2L)
++		/* S10 build 0031 (upstream B1L-0254/0255): APFS's purgeable requests answered 0 on the HFS+ root. PosterBoard
++		 * marks its poster store purgeable; refused, it creates no poster, and SpringBoard asserts when the wallpaper
++		 * or the home screen is edited ("lockViewController/homeViewController is nil!"). Purgeable is only a hint
++		 * for freeing space; the read requests leave their zeroed buffer ("not purgeable"). */
++		if (error && (cmd == 0xC0084A44 || cmd == 0x40304A6D || cmd == 0x40184A03 || cmd == 0xC1104A71 ||
++		    cmd == 0xC0304A6F) && vp->v_mount && !strcmp(vp->v_mount->mnt_vfsstat.f_fstypename, "hfs")) {
++			static int b2l_purgeable_on = -1, b2l_purgeable_said;
++			if (b2l_purgeable_on < 0) {
++				int on = 1;
++				PE_parse_boot_argn("b2l_hfs_purgeable", &on, sizeof(on));
++				b2l_purgeable_on = on;
++			}
++			if (b2l_purgeable_on) {
++				if (b2l_purgeable_said < 64) {
++					b2l_purgeable_said++;
++					printf("B2L PURGEABLE: %s fsctl 0x%lx error %d -> 0\n", proc_best_name(p), cmd, error);
++				}
++				error = 0;
++			}
++		}
++#endif
+ 	}
+ 	} /* end switch stmt */
+ 
