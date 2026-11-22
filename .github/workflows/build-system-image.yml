@@ -94,7 +94,7 @@ jobs:
             done
             # S10 build 0030: libkrw0 (needed by many packages, 2048 among them) depends on libkrw0-plugin, the jailbreak's
             # kernel read/write plug-in; this port has no exploit to offer one, so a virtual package provides the name
-            printf 'Package: b2l-libkrw0-plugin\nStatus: install ok installed\nPriority: optional\nSection: System\nInstalled-Size: 0\nMaintainer: ios-b1lte\nArchitecture: iphoneos-arm64\nVersion: 1.0\nProvides: libkrw0-plugin (= 1.1.1)\nDescription: virtual libkrw0-plugin for the S10 port\n\n'
+            printf 'Package: b2l-libkrw0-plugin\nStatus: install ok installed\nPriority: optional\nSection: System\nInstalled-Size: 0\nMaintainer: ios-b1lte\nArchitecture: iphoneos-arm64\nVersion: 1.0\nProvides: libkrw0-plugin (= 1.1.1), mobilesubstrate (= 99.0), cydia-substrate (= 99.0), com.saurik.substrate.safemode, preferenceloader (= 99.0)\nDescription: virtual libkrw0-plugin for the S10 port\n\n'
             dpkg-deb -f sileo.deb | sed '/^$/d' | awk 'NR==1{print; print "Status: install ok installed"; next} {print}'
             echo
           } | sudo tee -a "$st" > /dev/null

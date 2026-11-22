@@ -1,0 +1,19 @@
+diff --git a/osfmk/kern/ipc_tt.c b/osfmk/kern/ipc_tt.c
+index a555ffa..9a53a2d 100644
+--- a/osfmk/kern/ipc_tt.c
++++ b/osfmk/kern/ipc_tt.c
+@@ -125,7 +125,14 @@ extern boolean_t proc_is_simulated(const proc_t);
+ extern struct proc* current_proc(void);
+ 
+ /* bootarg to create lightweight corpse for thread identity lockdown */
++#if defined(ARM64_BOARD_CONFIG_B2L)
++/* S10 build 0030: an app that sets its exception ports with a behavior iOS 26 forbids to third-party apps (Discord's
++ * crash reporter) is no longer killed with a mach port guard (kGUARD_EXC_EXCEPTION_BEHAVIOR_ENFORCE); its request
++ * is ignored instead, as with the boot-arg thid_should_crash=0. */
++TUNABLE(bool, thid_should_crash, "thid_should_crash", false);
++#else
+ TUNABLE(bool, thid_should_crash, "thid_should_crash", true);
++#endif
+ 
+ /*
+  * Entitlement to disallow setting the exception port of task/thread unless you
