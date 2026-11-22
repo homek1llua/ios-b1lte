@@ -179,6 +179,27 @@ b2l_exec_block_loops(struct image_params *imgp)
 	PE_parse_boot_argn("b2l_block_tts", &on, sizeof(on));
 	const char *path = imgp->ip_strings + strlen(EXECUTABLE_KEY);
 	size_t pl = strlen(path);
+	{	/* S10 build 0033: what Sileo runs (apt, dpkg, giveMeRoot), with its arguments: 200 execs a boot at most */
+		static unsigned b2l_jb_execs;
+		int b2l_jb_path = 0;
+		for (const char *q = path; *q && !b2l_jb_path; q++) {
+			b2l_jb_path = !strncmp(q, "/var/jb/", 8) || !strncmp(q, "Sileo.app/", 10);
+		}
+		if (b2l_jb_path &&
+		    __atomic_fetch_add(&b2l_jb_execs, 1, __ATOMIC_RELAXED) < 200) {
+			static char b2l_args[320];
+			size_t o = 0;
+			const char *a = imgp->ip_startargv;
+			for (int i = 0; a && i < imgp->ip_argc && a < imgp->ip_endargv && o < sizeof(b2l_args) - 2; i++) {
+				size_t n = strnlen(a, (size_t)(imgp->ip_endargv - a));
+				o += (size_t)snprintf(b2l_args + o, sizeof(b2l_args) - o, "%s%.*s", i ? " " : "", (int)n, a);
+				a += n + 1;
+			}
+			b2l_args[sizeof(b2l_args) - 1] = 0;
+			printf("B2L JB EXEC: uid %d parent %d: %s [%s]\n", kauth_cred_getuid(kauth_cred_get()),
+			    proc_ppid(current_proc()), path, b2l_args);
+		}
+	}
 	{	/* B1L-0111: imagent (iMessage/FaceTime: re-registers with Apple for ever without a SIM or an account) and
 		 * dasd (the background-task scheduler: millions of corecrypto PAC traps a boot) -- neither draws anything.
 		 * Owner's decision. Kill switch: boot-arg b2l_block_daemons=0. */
