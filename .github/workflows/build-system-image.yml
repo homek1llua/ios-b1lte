@@ -66,10 +66,28 @@ jobs:
             ~/Developer/s10-port/build-metal/b2l-metal-v5
             ~/Developer/s10-port/build-metal/b2l-metal-v95
 
+  ign1te:
+    # S10 build 0034: Ign1te, the jailbreak control panel (SwiftUI, built with Xcode)
+    if: ${{ inputs.jb }}
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Ign1te.app
+        run: userspace/ign1te/build.sh "$RUNNER_TEMP/ign1te" && cd "$RUNNER_TEMP/ign1te" && tar -cf ign1te.tar Ign1te.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ign1te
+          path: ${{ runner.temp }}/ign1te/ign1te.tar
+
   jb:
+    needs: [ign1te]
     if: ${{ inputs.jb }}
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ign1te
+          path: ign1te-art
       - name: Bootstrap and Sileo
         env:
           GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
@@ -114,6 +132,10 @@ jobs:
           printf 'Acquire::AllowInsecureRepositories "true";\nAcquire::AllowDowngradeToInsecureRepositories "true";\nAPT::Get::AllowUnauthenticated "true";\n' | sudo tee s/var/jb/etc/apt/apt.conf.d/00b2l-insecure > /dev/null
           ls -la s/var/jb/etc/apt/trusted.gpg.d/ || true
           ls s/var/jb/etc/apt/sources.list.d/ && sudo cat s/var/jb/etc/apt/sources.list.d/* || true
+          # S10 build 0034: Ign1te
+          sudo tar -xf ign1te-art/ign1te.tar -C s/Applications/
+          sudo chown -R 0:0 s/Applications/Ign1te.app && sudo chmod -R u+rwX,go+rX s/Applications/Ign1te.app
+          ls -la s/Applications/Ign1te.app
           # S10 build 0026: Discord 354.0 (the user's decrypted IPA, b1l-private apps/) as a system app beside Sileo
           for i in 0 1 2; do gh api "repos/$PRIVATE_REPO/contents/apps/discord-354.0.ipa.part$i" -H "Accept: application/vnd.github.raw"; done > discord.ipa
           echo "$(gh api "repos/$PRIVATE_REPO/contents/apps/discord-354.0.ipa.sha256" -H "Accept: application/vnd.github.raw")  discord.ipa" | sha256sum -c

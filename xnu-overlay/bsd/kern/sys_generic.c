@@ -3088,3 +3088,67 @@ SYSCTL_PROC(_kern, OID_AUTO, coredump_encryption_key, CTLTYPE_OPAQUE | CTLFLAG_W
     0, 0, &sysctl_coredump_encryption_key_update, "-", "Set a new encryption key for coredumps");
 
 #endif /* CONFIG_KDP_INTERACTIVE_DEBUGGING && CONFIG_KDP_COREDUMP_ENCRYPTION*/
+
+#if defined(ARM64_BOARD_CONFIG_B2L)
+/*
+ * S10 build 0034: kern.b2l_jbctl, what the Ign1te app asks of the kernel (it runs as mobile, without a root helper).
+ * Only a process whose executable is /Applications/Ign1te.app/... may write it.
+ *   1  restart SpringBoard (SpringBoard and backboardd killed; launchd starts them again)
+ *   2  reboot userspace (every process but launchd killed; launchd starts its jobs again)
+ *   3  tweak injection on, 4 off (kern.b2l_jb_inject; read by the injection when it comes)
+ */
+#include <sys/signalvar.h>
+#include <sys/vnode.h>
+extern vnode_t proc_getexecutablevnode(proc_t);
+int b2l_jb_inject;
+SYSCTL_INT(_kern, OID_AUTO, b2l_jb_inject, CTLFLAG_RD | CTLFLAG_LOCKED, &b2l_jb_inject, 0, "Ign1te tweak injection");
+
+static int
+b2l_jbctl_kill(proc_t p, void *arg)
+{
+	int what = *(int *)arg;
+	pid_t pid = proc_getpid(p);
+	if (pid <= 1 || p == current_proc()) {
+		return PROC_RETURNED;
+	}
+	if (what == 2 || !strcmp(p->p_comm, "SpringBoard") || !strcmp(p->p_comm, "backboardd")) {
+		psignal(p, SIGKILL);
+	}
+	return PROC_RETURNED;
+}
+
+static int
+sysctl_b2l_jbctl SYSCTL_HANDLER_ARGS
+{
+#pragma unused(oidp, arg1, arg2)
+	static char path[MAXPATHLEN];
+	int value = 0, error = SYSCTL_IN(req, &value, sizeof(value));
+	if (error || !req->newptr) {
+		return error ? error : SYSCTL_OUT(req, &b2l_jb_inject, sizeof(b2l_jb_inject));
+	}
+	vnode_t vp = proc_getexecutablevnode(current_proc());
+	int len = sizeof(path), ok = 0;
+	if (vp != NULLVP) {
+		ok = !vn_getpath(vp, path, &len) && !strncmp(path, "/Applications/Ign1te.app/", 25);
+		vnode_put(vp);
+	}
+	if (!ok) {
+		return EPERM;
+	}
+	printf("B2L IGN1TE: request %d from pid %d\n", value, proc_getpid(current_proc()));
+	switch (value) {
+	case 1:
+	case 2:
+		proc_iterate(PROC_ALLPROCLIST, b2l_jbctl_kill, &value, NULL, NULL);
+		return 0;
+	case 3:
+	case 4:
+		b2l_jb_inject = value == 3;
+		return 0;
+	default:
+		return EINVAL;
+	}
+}
+SYSCTL_PROC(_kern, OID_AUTO, b2l_jbctl, CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY | CTLFLAG_LOCKED, 0, 0,
+    sysctl_b2l_jbctl, "I", "Ign1te requests");
+#endif
