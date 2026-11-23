@@ -17,7 +17,7 @@
 
 #include <sys/dirent.h>
 
-#define B2L_JB_MARKER "/private/var/db/b2l-jb-v7"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists; v4 (0026): Discord; v5 (0027): Discord weak-linked, apt insecure repos; v6 (0030): libkrw0-plugin; v7 (0034): Ign1te */
+#define B2L_JB_MARKER "/private/var/db/b2l-jb-v8"   /* v2 (build 0024): apt's dirs; v3 (0025): Sileo's sileolists; v4 (0026): Discord; v5 (0027): Discord weak-linked, apt insecure repos; v6 (0030): libkrw0-plugin; v7 (0034): Ign1te; v8 (0035): bootstrap/jailbreak markers */
 
 extern int b2l_system_file_copy(const char *, int (*)(void *, uint64_t, const void *, size_t), void *, uint64_t *);
 
@@ -416,6 +416,18 @@ b2l_jb_publish(vfs_context_t ctx)
 	}
 	bzero(&t, sizeof(t));
 	t.ctx = ctx;
+	{	/* S10 build 0035: /var/jb/var/mobile becomes a link to /var/mobile (Sileo hands apt-key and its downloads paths
+		 * under it); the empty directory an earlier payload made is set aside first, or the link could not be made */
+		vnode_t mvp = NULL;
+		if (!vnode_lookup("/private/var/jb/var/mobile", VNODE_LOOKUP_NOFOLLOW_ANY, &mvp, ctx)) {
+			int isdir = root_type(mvp, VDIR);
+			vnode_put(mvp);
+			if (isdir) {
+				int rr = b2l_layout_move("/private/var/jb/var/mobile", "/private/var/jb/var/mobile.b2l-0035", ctx);
+				printf("B2L JB: /var/jb/var/mobile directory set aside: %d\n", rr);
+			}
+		}
+	}
 	for (unsigned i = 0; i < 16; i++) {
 		uint64_t size = 0;
 		snprintf(part, sizeof(part), "b2l-jb/jb.part%u", i);

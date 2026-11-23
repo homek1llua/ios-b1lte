@@ -25,6 +25,35 @@ enum Kernel {
     }
 }
 
+// MARK: - Package managers
+
+struct PackageManager: Identifiable {
+    let id: String
+    let path: String
+    var installed: Bool { FileManager.default.fileExists(atPath: path + "/Info.plist") && registered }
+    var available: Bool { FileManager.default.fileExists(atPath: path + "/Info.plist") }
+    var registered: Bool { UserDefaults.standard.object(forKey: "pm." + id) as? Bool ?? (id == "Sileo") }
+
+    static let all = [
+        PackageManager(id: "Sileo", path: "/Applications/Sileo.app"),
+        PackageManager(id: "Zebra", path: "/var/jb/Applications/Zebra.app"),
+    ]
+
+    /// uicache (Procursus) registers or unregisters the app with LaunchServices, so it appears on or leaves the home screen.
+    func set(_ on: Bool) -> Bool {
+        var pid: pid_t = 0
+        let args = ["/var/jb/usr/bin/uicache", on ? "-p" : "-u", path]
+        var argv: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+        guard posix_spawn(&pid, args[0], nil, nil, &argv, environ) == 0 else { return false }
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
+        let ok = status == 0
+        if ok { UserDefaults.standard.set(on, forKey: "pm." + id) }
+        return ok
+    }
+}
+
 // MARK: - Themes
 
 struct Theme: Identifiable, Equatable {
@@ -56,7 +85,7 @@ struct Ign1teApp: App {
     }
 }
 
-enum Page { case main, settings, theme, credits, jailbreaking }
+enum Page { case main, settings, theme, credits, managers, choose, jailbreaking }
 
 final class Model: ObservableObject {
     @Published var page: Page = .main
@@ -66,12 +95,20 @@ final class Model: ObservableObject {
     @AppStorage("theme") var themeID = "Ign1te"
     var theme: Theme { Theme.all.first { $0.id == themeID } ?? Theme.all[0] }
 
+    @Published var chosen: Set<String> = Set(PackageManager.all.filter { $0.registered }.map { $0.id })
+
+    func start() {
+        if UserDefaults.standard.bool(forKey: "chosePackageManagers") { jailbreak() } else { page = .choose }
+    }
+
     func jailbreak() {
+        UserDefaults.standard.set(true, forKey: "chosePackageManagers")
         steps = []
         page = .jailbreaking
         let plan: [(String, () -> Bool)] = [
             ("Checking the kernel…", { Kernel.available }),
             ("Bootstrap in /var/jb…", { FileManager.default.fileExists(atPath: "/var/jb/usr/bin/apt") }),
+            ("Installing package managers…", { self.applyManagers() }),
             ("Enabling tweak injection…", { Kernel.request(3) }),
             ("Restarting SpringBoard…", { true }),
         ]
@@ -90,6 +127,15 @@ final class Model: ObservableObject {
         } else {
             message = "The kernel refused (is this the ios-b1lte kernel?)"
         }
+    }
+
+    func applyManagers() -> Bool {
+        var ok = true
+        for pm in PackageManager.all where pm.available && pm.registered != chosen.contains(pm.id) {
+            ok = pm.set(chosen.contains(pm.id)) && ok
+        }
+        objectWillChange.send()
+        return ok
     }
 
     private func run(_ plan: [(String, () -> Bool)], index: Int, done: @escaping (Bool) -> Void) {
@@ -150,6 +196,8 @@ struct RootView: View {
             case .settings: SettingsList(model: model)
             case .theme: ThemeList(model: model)
             case .credits: CreditsList(model: model)
+            case .managers: ManagersList(model: model)
+            case .choose: ChooseManagers(model: model)
             case .jailbreaking: Progress(model: model)
             }
         }
@@ -166,7 +214,7 @@ struct RootView: View {
                 .foregroundColor(.white)
                 .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(panel))
             }
-            Button { if !model.jailbroken { model.jailbreak() } } label: {
+            Button { if !model.jailbroken { model.start() } } label: {
                 HStack(spacing: 12) {
                     Image(systemName: model.jailbroken ? "lock.open" : "flame")
                     Text(model.jailbroken ? "Jailbroken" : "Jailbreak")
@@ -176,7 +224,7 @@ struct RootView: View {
             }
             .foregroundColor(model.jailbroken ? .white.opacity(0.5) : .white)
             .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(panel))
-            .disabled(model.page == .jailbreaking)
+            .disabled(model.page == .jailbreaking || model.page == .choose)
         }
     }
 }
@@ -259,6 +307,8 @@ struct SettingsList: View {
         .tint(model.theme.accent)
         .padding(.horizontal, 24).frame(height: 62)
         Divide()
+        Row(icon: "shippingbox", title: "Package Managers", detail: model.chosen.sorted().joined(separator: ", "), chevron: true) { model.page = .managers }
+        Divide()
         Row(icon: "paintpalette", title: "Theme", detail: model.themeID, chevron: true) { model.page = .theme }
         Divide()
         Text("Tweak injection loads ElleKit into apps and SpringBoard. It takes effect after a SpringBoard restart.")
@@ -328,5 +378,65 @@ struct Progress: View {
         if model.message != nil || model.steps.last?.hasPrefix("✕") == true {
             Row(icon: "chevron.left", title: "Back") { model.page = .main }
         }
+    }
+}
+
+// MARK: - Package manager pages
+
+struct ManagerTile: View {
+    @ObservedObject var model: Model
+    let pm: PackageManager
+    var body: some View {
+        Button {
+            if model.chosen.contains(pm.id) { model.chosen.remove(pm.id) } else { model.chosen.insert(pm.id) }
+        } label: {
+            VStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.12)).frame(width: 64, height: 64)
+                    Image(systemName: pm.id == "Sileo" ? "cube.box.fill" : "shippingbox.fill").font(.system(size: 28)).foregroundColor(.white)
+                }
+                Text(pm.id).font(.system(size: 15, weight: .medium)).foregroundColor(.white)
+                Image(systemName: model.chosen.contains(pm.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(model.chosen.contains(pm.id) ? model.theme.accent : .white.opacity(0.5))
+                if !pm.available { Text("not in this build").font(.system(size: 11)).foregroundColor(.white.opacity(0.4)) }
+            }
+            .opacity(pm.available ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(!pm.available)
+    }
+}
+
+struct ChooseManagers: View {
+    @ObservedObject var model: Model
+    var body: some View {
+        Header(title: "Jailbreak") { model.page = .main }
+        Text("Select package managers").font(.system(size: 17, weight: .semibold)).foregroundColor(.white).padding(.top, 8)
+        HStack(spacing: 36) { ForEach(PackageManager.all) { ManagerTile(model: model, pm: $0) } }.padding(.vertical, 18)
+        Text("If you are unsure which one to select, use Sileo").font(.system(size: 12)).foregroundColor(.white.opacity(0.45))
+        Button { model.jailbreak() } label: {
+            HStack { Image(systemName: "arrow.right"); Text("Continue") }
+                .font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).frame(height: 50)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(model.chosen.isEmpty ? 0.06 : 0.14)))
+        }
+        .disabled(model.chosen.isEmpty)
+        .padding(24)
+    }
+}
+
+struct ManagersList: View {
+    @ObservedObject var model: Model
+    var body: some View {
+        Header(title: "Package Managers") { model.page = .settings }
+        HStack(spacing: 36) { ForEach(PackageManager.all) { ManagerTile(model: model, pm: $0) } }.padding(.vertical, 18)
+        Button {
+            if !model.applyManagers() { model.message = "uicache failed for one of them" }
+        } label: {
+            Text("Apply").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).frame(height: 50)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.14)))
+        }
+        .padding(.horizontal, 24).padding(.bottom, 16)
     }
 }

@@ -118,6 +118,19 @@ jobs:
           } | sudo tee -a "$st" > /dev/null
           dpkg-deb -c sileo.deb | awk '{print $6}' | sed 's|^\./|/|; s|/$||; s|^/var/jb/Applications/Sileo.app|/Applications/Sileo.app|' | grep -v '^$' | sudo tee s/var/jb/Library/dpkg/info/org.coolstar.sileo.list > /dev/null
           grep -c '^Package:' "$st"
+          # S10 build 0035: Zebra, the second package manager Ign1te offers (registered with LaunchServices only when
+          # chosen there, by uicache); left out if no rootless build is found
+          url=$(GH_TOKEN="${{ github.token }}" gh api repos/zbrateam/Zebra/releases -q '[.[].assets[]|select(.name|test("iphoneos-arm64\\.deb$"))][0].browser_download_url' 2>/dev/null || true)
+          echo "Zebra: ${url:-none}"
+          if [ -n "$url" ] && curl -sfL -o zebra.deb "$url"; then
+            mkdir zx && dpkg-deb -x zebra.deb zx && za=$(find zx -maxdepth 5 -name 'Zebra.app' -type d | head -1)
+            if [ -n "$za" ]; then
+              sudo mkdir -p s/var/jb/Applications && sudo cp -a "$za" s/var/jb/Applications/Zebra.app
+              sudo chown -R 0:0 s/var/jb/Applications/Zebra.app
+              { dpkg-deb -f zebra.deb | sed '/^$/d' | awk 'NR==1{print; print "Status: install ok installed"; next} {print}'; echo; } | sudo tee -a "$st" > /dev/null
+              ls -la s/var/jb/Applications/Zebra.app | head
+            fi
+          fi
           sudo ls -la s/Applications/Sileo.app/giveMeRoot || true; sudo find s -type f -perm -4000
           # What prep_bootstrap.sh would make: apt's state dirs (Sileo: "the folder apt.procurs.us_dists_..._Packages
           # doesn't exist"), and apt run as root (no _apt sandbox user to drop to on this port)
@@ -126,6 +139,12 @@ jobs:
           # Sileo keeps its own copies of the repos' lists in /var/lib/apt/sileolists, written as mobile (0024's
           # "the folder havoc.app_._Packages doesn't exist")
           sudo mkdir -p s/var/jb/var/lib/apt/sileolists && sudo chown 501:501 s/var/jb/var/lib/apt/sileolists
+          # S10 build 0035: Sileo showed "Unknown Bootstrap" / "Unknown jailbreak": the marker files a Procursus bootstrap and
+          # a jailbreak leave (Sileo only knows named jailbreaks; Dopamine's rootless layout is the one this port follows)
+          sudo touch s/var/jb/.procursus_strapped s/var/jb/.installed_dopamine
+          # S10 build 0035: Sileo names its downloads by the jailbreak's view of /var/mobile (/var/jb/var/mobile/...);
+          # an empty directory there left apt-key and the package downloads pointing at nothing
+          sudo rmdir s/var/jb/var/mobile && sudo ln -s /var/mobile s/var/jb/var/mobile
           echo 'APT::Sandbox::User "root";' | sudo tee s/var/jb/etc/apt/apt.conf.d/00b2l-sandbox > /dev/null
           # S10 build 0027: Sileo found no package after a refresh -- repos whose signature gpgv cannot check here are
           # still used
