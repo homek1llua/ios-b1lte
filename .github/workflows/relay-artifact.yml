@@ -1,0 +1,30 @@
+name: Relay an artifact to b1l-private
+# The session building boot images cannot download Actions artifacts; this puts one in b1l-private's relay/ folder
+# (45 MB pieces), which it can read.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: { description: "run id", required: true }
+      name: { description: "artifact name", required: true }
+  push:
+    branches: [relay]
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Relay
+        env:
+          GH_TOKEN: ${{ secrets.B1L_PRIVATE_TOKEN }}
+          REPO_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -f relay.txt ]; then read RUN NAME < relay.txt; else RUN='${{ inputs.run_id }}'; NAME='${{ inputs.name }}'; fi
+          GH_TOKEN=$REPO_TOKEN gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "$NAME" -D art
+          (cd art && zip -qr "../$NAME.zip" .)
+          git clone -q --depth 1 --filter=blob:none --no-checkout "https://x-access-token:$GH_TOKEN@github.com/homek1llua/b1l-private.git" p
+          cd p && git sparse-checkout set --no-cone /relay/ && git checkout -q
+          rm -rf relay && mkdir relay && split -b 45000000 -d -a 1 "../$NAME.zip" "relay/$NAME.zip.part"
+          git -c user.name=relay -c user.email=relay@localhost add -A relay
+          git -c user.name=relay -c user.email=relay@localhost commit -qm "relay $NAME" && git push -q
+          ls -la relay
