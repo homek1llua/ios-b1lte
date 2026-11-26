@@ -13,6 +13,7 @@
 #include <sys/proc.h>
 #include <sys/proc_internal.h>
 #include <sys/systm.h>
+#include <sys/vnode.h>
 #include <sys/ucred.h>
 #include <sys/uio.h>
 #include <sys/vnode.h>
@@ -34,8 +35,17 @@ bool b2l_amfi_active(void)
 bool b2l_amfi_vnode_is_platform(struct vnode *vp)
 {
     mount_t mp;
-    return b2l_amfi_active()&&vp&&vnode_vtype(vp)==VREG&&
-           (mp=vnode_mount(vp))&&(vfs_flags(mp)&MNT_ROOTFS);
+    if(!b2l_amfi_active()||!vp||vnode_vtype(vp)!=VREG||!(mp=vnode_mount(vp)))return false;
+    if(vfs_flags(mp)&MNT_ROOTFS)return true;
+    /* S10 build 0037: the jailbreak's own binaries (/private/var/jb, what a jailbreak puts in its trust cache) carry
+     * their entitlements too: Zebra's no-sandbox, the setuid helpers' platform-application. Before, everything off
+     * the root FS had none, so Zebra ran sandboxed ("Demo Mode") and could not run its root helper. */
+    char*path=kalloc_data(MAXPATHLEN,Z_WAITOK);int len=MAXPATHLEN;bool jb=false;
+    if(path){
+        jb=!vn_getpath(vp,path,&len)&&!strncmp(path,"/private/var/jb/",16);
+        kfree_data(path,MAXPATHLEN);
+    }
+    return jb;
 }
 static void *label_ent(struct label *label)
 {return label&&b2l_amfi_slot>=0?(void*)mac_label_get(label,b2l_amfi_slot):NULL;}
