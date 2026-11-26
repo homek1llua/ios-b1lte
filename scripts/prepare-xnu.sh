@@ -79,7 +79,8 @@ python3 "$repo_root/scripts/apply-board-patches.py" "$xnu_path" \
   "$repo_root/patches/0111-b2l-spare-watchdog-kills.patch" \
   "$repo_root/patches/0112-b2l-full-exit-reason.patch" \
   "$repo_root/patches/0113-b2l-exception-behavior-not-fatal.patch" \
-  "$repo_root/patches/0114-b2l-hfs-purgeable-fsctl.patch"
+  "$repo_root/patches/0114-b2l-hfs-purgeable-fsctl.patch" \
+  "$repo_root/patches/0115-b2l-jb-setuid.patch"
 # New files have separate provenance and are kept as an overlay. A few overlay files
 # (e.g. iokit/Kernel/IOUserClient.cpp) are full replacements of upstream files that the
 # patches above already touched; those are tracked by the XNU checkout and are replaced.
