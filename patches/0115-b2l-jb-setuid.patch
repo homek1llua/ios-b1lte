@@ -1,8 +1,71 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
-index 47f727f..9536dce 100644
+index 47f727f..4d91f06 100644
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -7547,7 +7547,24 @@ exec_check_permissions(struct image_params *imgp)
+@@ -3982,6 +3982,26 @@ spawn_coalitions_release_all(coalition_t coal[COALITION_NUM_TYPES])
+ #endif
+ 
+ #if CONFIG_PERSONAS
++#if defined(ARM64_BOARD_CONFIG_B2L)
++/* S10 build 0038: a jailbreak package manager (Sileo: every root command, posix_spawn with persona 99 and uid 0)
++ * runs as mobile; iOS refuses a non-root caller a uid 0 persona, and persona 99 may not exist here. For callers
++ * whose executable is a package manager or part of the jailbreak, the request is granted (what Dopamine's hooks do). */
++extern vnode_t proc_getexecutablevnode(proc_t);
++static int
++b2l_persona_jb_caller(void)
++{
++	static char path[MAXPATHLEN];
++	int len = sizeof(path), jb = 0;
++	vnode_t vp = proc_getexecutablevnode(current_proc());
++	if (vp != NULLVP) {
++		jb = !vn_getpath(vp, path, &len) &&
++		    (!strncmp(path, "/Applications/Sileo.app/", 24) || !strncmp(path, "/Applications/Ign1te.app/", 25) ||
++		    !strncmp(path, "/private/var/jb/", 16));
++		vnode_put(vp);
++	}
++	return jb;
++}
++#endif
+ static int
+ spawn_validate_persona(struct _posix_spawn_persona_info *px_persona)
+ {
+@@ -3989,6 +4009,19 @@ spawn_validate_persona(struct _posix_spawn_persona_info *px_persona)
+ 	struct persona *persona = NULL;
+ 	kauth_cred_t mycred = kauth_cred_get();
+ 
++#if defined(ARM64_BOARD_CONFIG_B2L)
++	if (b2l_persona_jb_caller()) {
++		static unsigned said;
++		if (said++ < 32) {
++			printf("B2L PERSONA: %s[%d] persona %u uid %u gid %u flags 0x%x granted\n", proc_best_name(current_proc()),
++			    proc_getpid(current_proc()), px_persona->pspi_id, px_persona->pspi_uid, px_persona->pspi_gid,
++			    px_persona->pspi_flags);
++		}
++		px_persona->pspi_flags |= 0x80000000u;	/* B2L: adopted by credentials alone if the persona is missing */
++		return 0;
++	}
++#endif
++
+ 	if (!IOCurrentTaskHasEntitlement( PERSONA_MGMT_ENTITLEMENT)) {
+ 		return EPERM;
+ 	}
+@@ -4056,6 +4089,15 @@ spawn_persona_adopt(proc_t p, struct _posix_spawn_persona_info *px_persona)
+ 	 * the kauth with a different UID/GID combo
+ 	 */
+ 	persona = persona_lookup(px_persona->pspi_id);
++#if defined(ARM64_BOARD_CONFIG_B2L)
++	if (!persona && (px_persona->pspi_flags & 0x80000000u)) {
++		kauth_cred_proc_update(p, PROC_SETTOKEN_ALWAYS,
++		    ^bool (kauth_cred_t parent __unused, kauth_cred_t model) {
++			return kauth_cred_model_setpersona(model, px_persona);
++		});
++		return 0;
++	}
++#endif
+ 	if (!persona) {
+ 		return ESRCH;
+ 	}
+@@ -7547,7 +7589,24 @@ exec_check_permissions(struct image_params *imgp)
  #endif
  
  	/* Disable setuid-ness for traced programs or if MNT_NOSUID */
@@ -27,7 +90,7 @@ index 47f727f..9536dce 100644
  		vap->va_mode &= ~(VSUID | VSGID);
  	}
  
-@@ -7561,6 +7578,19 @@ exec_check_permissions(struct image_params *imgp)
+@@ -7561,6 +7620,19 @@ exec_check_permissions(struct image_params *imgp)
  
  #if CONFIG_MACF
  	error = mac_vnode_check_exec(imgp->ip_vfs_context, vp, imgp);
