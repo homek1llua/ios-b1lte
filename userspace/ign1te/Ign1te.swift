@@ -28,17 +28,17 @@ enum Kernel {
 // MARK: - SSH
 
 @_silgen_name("posix_spawnattr_set_persona_np")
-func spawnattr_set_persona(_ attr: UnsafeMutablePointer<posix_spawnattr_t>, _ persona: uid_t, _ flags: UInt32) -> Int32
+func spawnattr_set_persona(_ attr: UnsafeMutablePointer<posix_spawnattr_t?>, _ persona: uid_t, _ flags: UInt32) -> Int32
 @_silgen_name("posix_spawnattr_set_persona_uid_np")
-func spawnattr_set_persona_uid(_ attr: UnsafeMutablePointer<posix_spawnattr_t>, _ uid: uid_t) -> Int32
+func spawnattr_set_persona_uid(_ attr: UnsafeMutablePointer<posix_spawnattr_t?>, _ uid: uid_t) -> Int32
 @_silgen_name("posix_spawnattr_set_persona_gid_np")
-func spawnattr_set_persona_gid(_ attr: UnsafeMutablePointer<posix_spawnattr_t>, _ gid: gid_t) -> Int32
+func spawnattr_set_persona_gid(_ attr: UnsafeMutablePointer<posix_spawnattr_t?>, _ gid: gid_t) -> Int32
 
 enum Root {
     /// Runs a command as root (persona 99, uid 0: the kernel grants it to Ign1te). Returns the exit status.
     @discardableResult
     static func run(_ args: [String], wait: Bool = true) -> Int32 {
-        var attr: posix_spawnattr_t = nil
+        var attr: posix_spawnattr_t? = nil
         posix_spawnattr_init(&attr)
         defer { posix_spawnattr_destroy(&attr) }
         _ = spawnattr_set_persona(&attr, 99, 1)
@@ -48,7 +48,7 @@ enum Root {
         var argv: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
         defer { argv.forEach { free($0) } }
         let e = posix_spawn(&pid, args[0], nil, &attr, &argv, environ)
-        guard e == 0 else { return -e }
+        guard e == 0 else { return Int32(0) - e }
         guard wait else { return 0 }
         var status: Int32 = 0
         waitpid(pid, &status, 0)
