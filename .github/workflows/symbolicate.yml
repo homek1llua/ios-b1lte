@@ -50,7 +50,11 @@ jobs:
           while read -r sym; do
             [ -n "$sym" ] || continue
             echo "=== $sym"
-            ipsw dyld disass "$dsc" --symbol "$sym" --quiet 2>&1 | head -400
+            case "$sym" in
+              0x*) name=$(ipsw dyld a2s "$dsc" "$sym" 2>&1 | tail -1); echo "($name)"
+                   ipsw dyld disass "$dsc" --vaddr "$sym" --count 160 --quiet 2>&1 | head -400;;
+              *) ipsw dyld disass "$dsc" --symbol "$sym" --quiet 2>&1 | head -400;;
+            esac
           done < disassemble.txt | tee -a symbols.txt
       - uses: actions/upload-artifact@v4
         with:
