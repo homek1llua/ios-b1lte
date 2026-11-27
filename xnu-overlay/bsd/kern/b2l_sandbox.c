@@ -17,6 +17,7 @@
 #include <sys/vnode.h>
 #include <security/mac_policy.h>
 struct componentname;
+extern vnode_t proc_getexecutablevnode(proc_t);
 #include <os/atomic_private.h>
 #include <os/refcnt.h>
 #include <kern/kalloc.h>
@@ -141,10 +142,30 @@ b2l_sandbox_container_path(user_addr_t argument)
         if (b2l_containers[i].pid == pid) { strlcpy(path, b2l_containers[i].path, sizeof(path)); break; }
     }
     lck_spin_unlock(&b2l_container_lock);
-    if (said++ < 48) {
+    /* S10 build 0044: no process is launched with a container here (0043's log), so an app extension (.appex) --
+     * which refuses to run without one -- gets the mobile home, where an unsandboxed process keeps its data anyway */
+    bool appex = false;
+    if (!path[0]) {
+        proc_t target = proc_find(pid);
+        if (target != PROC_NULL) {
+            vnode_t vp = proc_getexecutablevnode(target);
+            if (vp != NULLVP) {
+                char *exe = kalloc_data(MAXPATHLEN, Z_WAITOK);
+                int len = MAXPATHLEN;
+                if (exe && !vn_getpath(vp, exe, &len)) {
+                    for (const char *q = exe; *q && !appex; q++) appex = !strncmp(q, ".appex/", 7);
+                }
+                if (exe) kfree_data(exe, MAXPATHLEN);
+                vnode_put(vp);
+            }
+            proc_rele(target);
+        }
+        if (appex) strlcpy(path, "/private/var/mobile", sizeof(path));
+    }
+    if (appex && said++ < 48) {
         char name[32];
         proc_selfname(name, sizeof(name));
-        printf("B2L SB CONTAINER: query by %s for pid %d: %s\n", name, pid, path[0] ? path : "(none)");
+        printf("B2L SB CONTAINER: query by %s for app extension pid %d: %s\n", name, pid, path);
     }
     if (!path[0]) return ENOENT;
     size_t n = strlen(path) + 1;
