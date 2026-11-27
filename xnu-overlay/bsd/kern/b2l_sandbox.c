@@ -147,7 +147,7 @@ b2l_sandbox_container_path(user_addr_t argument)
     bool appex = false;
     if (!path[0]) {
         proc_t target = proc_find(pid);
-        if (target != PROC_NULL) {
+        if (target != NULL) {
             vnode_t vp = proc_getexecutablevnode(target);
             if (vp != NULLVP) {
                 char *exe = kalloc_data(MAXPATHLEN, Z_WAITOK);
