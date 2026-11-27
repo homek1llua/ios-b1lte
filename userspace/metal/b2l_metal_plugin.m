@@ -41,7 +41,10 @@ psay(const char *format, ...)
 	/* S10 build 0028: backboardd only (upstream B1L-0269). Without a Mali, SpringBoard and iconservicesagent draw the
 	 * app icons with Apple's own processor path, and right; through our translator they were flat squares. The price
 	 * (upstream's 0184): the Clock and Calendar icons, widgets and some Control Center glyphs stay empty. */
-	static const char *const allowed[] = { "backboardd" };
+	/* S10 build 0041: and the wallpaper (poster) extensions, whose image renderer needs a Metal device: without one
+	 * PhotosPosterProvider asserted in -[NUDevice _newRendererWithOptions:error:] and no photo could be set */
+	static const char *const allowed[] = { "backboardd", "PhotosPosterProvider", "PhotosPicker",
+	    "CollectionsPosterExtension", "MercuryPosterExtension" };
 	const char *me = getprogname();
 	bool ok = false;
 	for (unsigned i = 0; me != NULL && i < sizeof(allowed) / sizeof(allowed[0]); i++)
