@@ -1,0 +1,40 @@
+name: Symbolicate crash addresses
+# Looks up crash backtrace addresses (symbolicate.txt: "# label" lines, then one slid address per line) in the
+# iOS 23G90 dyld shared cache, extracted from Apple's public IPSW with blacktop's ipsw tool.
+on:
+  workflow_dispatch:
+    inputs:
+      slide: { description: "shared cache slide", required: true, default: "0x286c000" }
+  push:
+    branches: [symbolicate]
+jobs:
+  symbolicate:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ipsw
+        run: brew install blacktop/tap/ipsw
+      - name: Extract the dyld shared cache
+        run: |
+          set -euo pipefail
+          url="https://updates.cdn-apple.com/2026SummerFCS/a1dbd14a-9e9d-49b3-9af6-02286d68883f/iPhone17,2_26.6.2_23G90_Restore.ipsw"
+          mkdir -p cache
+          ipsw extract --dyld --dyld-arch arm64e --remote "$url" -o cache
+          find cache -name 'dyld_shared_cache_arm64e' -print
+      - name: Symbolicate
+        run: |
+          set -euo pipefail
+          dsc=$(find cache -name 'dyld_shared_cache_arm64e' | head -1)
+          slide="${{ inputs.slide }}"; slide="${slide:-0x286c000}"
+          while read -r line; do
+            case "$line" in
+              "#"*) echo "$line";;
+              0x*) unslid=$(printf '0x%x' $(( line - slide )))
+                   sym=$(ipsw dyld a2s "$dsc" "$unslid" 2>&1 | tail -1 || true)
+                   echo "$line -> $sym";;
+            esac
+          done < symbolicate.txt | tee symbols.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols
+          path: symbols.txt
