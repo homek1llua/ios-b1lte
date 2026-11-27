@@ -33,7 +33,17 @@ jobs:
                    sym=$(ipsw dyld a2s "$dsc" "$unslid" 2>&1 | tail -1 || true)
                    echo "$line -> $sym";;
             esac
+
           done < symbolicate.txt | tee symbols.txt
+      - name: Disassemble functions (disassemble.txt, one symbol per line)
+        run: |
+          dsc=$(find cache -name 'dyld_shared_cache_arm64e' | head -1)
+          [ -f disassemble.txt ] || exit 0
+          while read -r sym; do
+            [ -n "$sym" ] || continue
+            echo "=== $sym"
+            ipsw dyld disass "$dsc" --symbol "$sym" --quiet 2>&1 | head -400
+          done < disassemble.txt | tee -a symbols.txt
       - uses: actions/upload-artifact@v4
         with:
           name: symbols
