@@ -4,7 +4,7 @@ name: Symbolicate crash addresses
 on:
   workflow_dispatch:
     inputs:
-      slide: { description: "shared cache slide", required: true, default: "0x286c000" }
+      slide: { description: "shared cache slide", required: true, default: "0x19a2c000" }
   push:
     branches: [symbolicate]
 jobs:
@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           dsc=$(find cache -name 'dyld_shared_cache_arm64e' | head -1)
-          slide="${{ inputs.slide }}"; slide="${slide:-0x286c000}"; [ -f symbolicate.unslid ] && slide=0
+          slide="${{ inputs.slide }}"; slide="${slide:-0x19a2c000}"; [ -f symbolicate.unslid ] && slide=0
           while read -r line; do
             case "$line" in
               "#"*) echo "$line";;
