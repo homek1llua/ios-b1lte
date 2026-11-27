@@ -14,7 +14,9 @@
 #include <kern/locks.h>
 #include <sys/priv.h>
 #include <sys/codesign.h>
+#include <sys/vnode.h>
 #include <security/mac_policy.h>
+struct componentname;
 #include <os/atomic_private.h>
 #include <os/refcnt.h>
 #include <kern/kalloc.h>
