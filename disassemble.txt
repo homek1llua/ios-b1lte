@@ -1,1 +1,4 @@
-0x1d1f430d4
++[FPDVolume volumeRoleForStatFS:]
+-[FPDVolumeManager loadHomeVolume]
+-[FPDVolumeManager loadSingleVolume:role:]
+-[FPDVolume initWithStatFS:knownRole:volumeManager:]
