@@ -1,5 +1,5 @@
 diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
-index 452467b..f193fff 100644
+index 452467b..b95b4cb 100644
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
 @@ -2060,7 +2060,20 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
@@ -24,11 +24,40 @@ index 452467b..f193fff 100644
  	const char *desc = exit_reason_get_string_desc(p->p_exit_reason);
  	b2l_early_trace("B2L CRASH: %s[%d] status=0x%x exception=%u code=0x%llx sub=0x%llx\n",
  	    p->p_comm, proc_getpid(p), rv, ut->uu_exception,
-@@ -2083,11 +2096,15 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
+@@ -2083,11 +2096,44 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
  		if (fp && fp <= UINT64_MAX - 16 && !copyin((user_addr_t)(fp + 16), &arg, sizeof(arg)))
  			b2l_trace_crash_text(proc_getpid(p), "frame_arg", arg);
  	}
 -	uintptr_t bt[12];
++	/* S10 build 0042: an app that stops itself on an uncaught Objective-C exception (PhotosPicker) leaves the reason
++	 * only in its own memory: look for readable text behind the pointers on its stack (the NSException, its name and
++	 * reason strings are among them). Selected processes, 4 KB of stack, 24 strings at most. */
++	if (state && is_saved_state64(state) && (!strcmp(p->p_comm, "PhotosPicker") || !strcmp(p->p_comm, "Files") ||
++	    !strncmp(p->p_comm, "PhotosPosterPro", 15) || !strncmp(p->p_comm, "com.apple.Docume", 16))) {
++		uint64_t sp = get_saved_state_sp(state), words[64];
++		unsigned found = 0;
++		for (unsigned chunk = 0; chunk < 8 && found < 24; chunk++) {
++			if (copyin((user_addr_t)(sp + chunk * sizeof(words)), words, sizeof(words))) break;
++			for (unsigned w = 0; w < 64 && found < 24; w++) {
++				uint64_t v = words[w] & 0x0000ffffffffffffULL;
++				if (v < 0x100000000ULL || v > 0x0000000fffffffffULL) continue;
++				static const unsigned offs[] = { 0, 16, 17, 24 };
++				for (unsigned o = 0; o < 4; o++) {
++					char s[96]; unsigned n = 0;
++					if (copyin((user_addr_t)(v + offs[o]), s, sizeof(s) - 1)) continue;
++					s[sizeof(s) - 1] = 0;
++					while (n < sizeof(s) - 1 && s[n] >= 32 && s[n] < 127) n++;
++					if (n >= 16 && (s[n] == 0 || n == sizeof(s) - 1)) {
++						s[n] = 0;
++						b2l_early_trace("B2L FAULTSTR: pid=%d sp+0x%x @+%u: %s\n", proc_getpid(p),
++						    (unsigned)(chunk * sizeof(words) + w * 8), offs[o], s);
++						found++;
++						break;
++					}
++				}
++			}
++		}
++	}
 +	uintptr_t bt[24];
  	struct backtrace_user_info info = BTUINFO_INIT;
 -	unsigned frames = backtrace_user(bt, 12, NULL, &info);
@@ -44,7 +73,7 @@ index 452467b..f193fff 100644
  		b2l_early_trace("B2L BT: pid=%d frame=%u pc=0x%llx\n", proc_getpid(p), i, (uint64_t)bt[i]);
  }
  #endif
-@@ -2182,6 +2199,19 @@ proc_prepareexit(proc_t p, int rv, boolean_t perf_notify)
+@@ -2182,6 +2228,19 @@ proc_prepareexit(proc_t p, int rv, boolean_t perf_notify)
  				    "pid: %d -- process name: %s -- exit reason namespace: %d -- subcode: 0x%llx -- description: %s",
  				    proc_getpid(p), proc_name, p->p_exit_reason->osr_namespace, p->p_exit_reason->osr_code,
  				    exit_reason_get_string_desc(p->p_exit_reason));
