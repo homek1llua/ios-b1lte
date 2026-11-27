@@ -31,7 +31,9 @@ b2l_fstype_spoof_apfs(mount_t mp)
 	 * whose p_name reads "com.apple.MobileInstallationHelp". */
 	char name[2 * MAXCOMLEN + 1];
 	proc_selfname(name, sizeof(name));
-	return strcmp(name, "installd") == 0 ||
+	/* S10 build 0041: and fileproviderd -- FPVolumeFPFSSupported() wants an APFS home volume; refused, -[FPDDomain
+	 * volume] stayed nil and fileproviderd asserted (FPDDomain.m:218), so Files and Safari's downloads had no storage */
+	return strcmp(name, "installd") == 0 || strcmp(name, "fileproviderd") == 0 ||
 	    strcmp(name, "installcoordinationd") == 0 ||
 	    strncmp(name, "com.apple.MobileInstallationHelperService", 2 * MAXCOMLEN) == 0;
 }
