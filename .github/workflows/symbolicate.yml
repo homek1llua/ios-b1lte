@@ -56,7 +56,7 @@ jobs:
               *) ipsw dyld disass "$dsc" --symbol "$sym" --quiet 2>&1 | head -400;;
             esac
           done < disassemble.txt | tee -a symbols.txt
-      - name: List symbols (symbols-grep.txt: image, then a pattern)
+      - name: List symbols (symbols-grep.txt holds an image and a pattern)
         run: |
           dsc=$(find cache -name 'dyld_shared_cache_arm64e' | head -1)
           [ -f symbols-grep.txt ] || exit 0
