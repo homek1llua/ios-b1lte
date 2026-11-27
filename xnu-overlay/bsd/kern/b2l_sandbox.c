@@ -77,6 +77,79 @@ b2l_sandbox_container_expected(user_addr_t argument)
     return error;
 }
 
+/*
+ * S10 build 0043: container paths. A process launched into a container (xpcproxy, POSIX_SPAWN_SETEXEC) carries the
+ * path in its "Sandbox" spawn attributes (libsystem_sandbox's sandbox_spawnattrs: path at 0x50, length at 0xc). It is
+ * kept per pid at exec and answered to the container-path query (op 4: pid, pid version, buffer, size, by-token flag).
+ * Before, op 4 always failed with ENOENT, and extensions such as PhotosPicker stopped themselves:
+ * "plugin has invalid sandbox or container: error 2 path ?".
+ */
+#define B2L_CONTAINERS 128
+#define B2L_CONTAINER_PATH 192
+static struct { pid_t pid; char path[B2L_CONTAINER_PATH]; } b2l_containers[B2L_CONTAINERS];
+static LCK_GRP_DECLARE(b2l_container_grp, "b2l_container");
+static LCK_SPIN_DECLARE(b2l_container_lock, &b2l_container_grp);
+static unsigned b2l_container_said;
+
+static int
+b2l_sandbox_check_exec(kauth_cred_t cred __unused, struct vnode *vp __unused, struct vnode *scriptvp __unused,
+    struct label *vnodelabel __unused, struct label *scriptlabel __unused, struct label *execlabel __unused,
+    struct componentname *cnp __unused, u_int *csflags __unused, void *attr, size_t attrlen)
+{
+    pid_t pid = proc_selfpid();
+    char path[B2L_CONTAINER_PATH] = { 0 };
+    if (!b2l_sandbox_development_enabled()) return 0;
+    if (attr && attrlen > 0x50 + 1) {
+        size_t max = attrlen - 0x50 < sizeof(path) ? attrlen - 0x50 : sizeof(path);
+        strlcpy(path, (const char *)attr + 0x50, max);
+    }
+    lck_spin_lock(&b2l_container_lock);
+    int slot = -1, empty = -1;
+    for (int i = 0; i < B2L_CONTAINERS; i++) {
+        if (b2l_containers[i].pid == pid) { slot = i; break; }
+        if (empty < 0 && b2l_containers[i].pid == 0) empty = i;
+    }
+    if (path[0]) {
+        if (slot < 0) slot = empty >= 0 ? empty : (int)(pid % B2L_CONTAINERS);
+        b2l_containers[slot].pid = pid;
+        strlcpy(b2l_containers[slot].path, path, sizeof(b2l_containers[slot].path));
+    } else if (slot >= 0) {
+        b2l_containers[slot].pid = 0;
+    }
+    lck_spin_unlock(&b2l_container_lock);
+    if (path[0] && b2l_container_said++ < 48) {
+        char name[32];
+        proc_selfname(name, sizeof(name));
+        printf("B2L SB CONTAINER: %s[%d] %s\n", name, pid, path);
+    }
+    return 0;
+}
+
+static int
+b2l_sandbox_container_path(user_addr_t argument)
+{
+    struct { uint64_t pid, version; user64_addr_t buffer; uint64_t size, by_token; } a;
+    char path[B2L_CONTAINER_PATH] = { 0 };
+    static unsigned said;
+    int error = copyin(argument, &a, sizeof(a));
+    if (error) return error;
+    pid_t pid = a.pid ? (pid_t)a.pid : proc_selfpid();
+    lck_spin_lock(&b2l_container_lock);
+    for (int i = 0; i < B2L_CONTAINERS; i++) {
+        if (b2l_containers[i].pid == pid) { strlcpy(path, b2l_containers[i].path, sizeof(path)); break; }
+    }
+    lck_spin_unlock(&b2l_container_lock);
+    if (said++ < 48) {
+        char name[32];
+        proc_selfname(name, sizeof(name));
+        printf("B2L SB CONTAINER: query by %s for pid %d: %s\n", name, pid, path[0] ? path : "(none)");
+    }
+    if (!path[0]) return ENOENT;
+    size_t n = strlen(path) + 1;
+    if (!a.buffer || a.size < n) return ERANGE;
+    return copyout(path, a.buffer, n);
+}
+
 static int
 b2l_sandbox_syscall(struct proc *process, int operation, user_addr_t argument)
 {
@@ -87,8 +160,8 @@ b2l_sandbox_syscall(struct proc *process, int operation, user_addr_t argument)
     }
     b2l_sandbox_log_operation(operation);
     switch (operation) {
-    case 4: /* container-path query: no fabricated path */
-        return ENOENT;
+    case 4: /* container-path query: the path the process was launched with (S10 build 0043) */
+        return b2l_sandbox_container_path(argument);
     case 5: case 6: case 7: case 0x50:
         return b2l_extension_syscall(process, operation, argument);
     case 0x43:
@@ -119,6 +192,7 @@ static const struct mac_policy_ops b2l_sandbox_ops = {
     .mpo_policy_syscall = b2l_sandbox_syscall,
     .mpo_priv_grant = b2l_sandbox_priv_grant,
     .mpo_proc_notify_exit = b2l_extension_process_exit,
+    .mpo_vnode_check_exec = b2l_sandbox_check_exec,
 };
 
 static struct mac_policy_conf b2l_sandbox_conf = {
