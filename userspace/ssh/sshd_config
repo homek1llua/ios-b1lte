@@ -1,0 +1,15 @@
+# S10 port (build 0040): sshd for the PC, key login only. Started by Ign1te as root.
+Port 22
+HostKey /var/jb/etc/ssh/ssh_host_ed25519_key
+HostKey /var/jb/etc/ssh/ssh_host_rsa_key
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+AuthorizedKeysFile /var/jb/etc/ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+StrictModes no
+PrintMotd no
+UseDNS no
+Subsystem sftp /var/jb/usr/libexec/sftp-server
+PidFile /var/jb/var/run/sshd.pid

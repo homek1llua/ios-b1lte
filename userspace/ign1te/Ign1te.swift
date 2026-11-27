@@ -25,6 +25,70 @@ enum Kernel {
     }
 }
 
+// MARK: - SSH
+
+@_silgen_name("posix_spawnattr_set_persona_np")
+func spawnattr_set_persona(_ attr: UnsafeMutablePointer<posix_spawnattr_t>, _ persona: uid_t, _ flags: UInt32) -> Int32
+@_silgen_name("posix_spawnattr_set_persona_uid_np")
+func spawnattr_set_persona_uid(_ attr: UnsafeMutablePointer<posix_spawnattr_t>, _ uid: uid_t) -> Int32
+@_silgen_name("posix_spawnattr_set_persona_gid_np")
+func spawnattr_set_persona_gid(_ attr: UnsafeMutablePointer<posix_spawnattr_t>, _ gid: gid_t) -> Int32
+
+enum Root {
+    /// Runs a command as root (persona 99, uid 0: the kernel grants it to Ign1te). Returns the exit status.
+    @discardableResult
+    static func run(_ args: [String], wait: Bool = true) -> Int32 {
+        var attr: posix_spawnattr_t = nil
+        posix_spawnattr_init(&attr)
+        defer { posix_spawnattr_destroy(&attr) }
+        _ = spawnattr_set_persona(&attr, 99, 1)
+        _ = spawnattr_set_persona_uid(&attr, 0)
+        _ = spawnattr_set_persona_gid(&attr, 0)
+        var pid: pid_t = 0
+        var argv: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+        let e = posix_spawn(&pid, args[0], nil, &attr, &argv, environ)
+        guard e == 0 else { return -e }
+        guard wait else { return 0 }
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
+        return status
+    }
+}
+
+enum SSH {
+    static let pidFile = "/var/jb/var/run/sshd.pid"
+    static let logFile = "/var/jb/var/log/sshd.log"
+    static var running: Bool {
+        guard let s = try? String(contentsOfFile: pidFile, encoding: .utf8),
+              let pid = Int32(s.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        return kill(pid, 0) == 0 || errno == EPERM
+    }
+    static func start() -> Int32 {
+        if running { return 0 }
+        return Root.run(["/var/jb/usr/sbin/sshd", "-f", "/var/jb/etc/ssh/sshd_config", "-E", logFile])
+    }
+    static var log: String {
+        let s = (try? String(contentsOfFile: logFile, encoding: .utf8)) ?? "(no log yet)"
+        return s.split(separator: "\n").suffix(6).joined(separator: "\n")
+    }
+    static var address: String {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return "no Wi-Fi address" }
+        defer { freeifaddrs(list) }
+        var p: UnsafeMutablePointer<ifaddrs>? = first
+        while let i = p {
+            if let a = i.pointee.ifa_addr, a.pointee.sa_family == UInt8(AF_INET), String(cString: i.pointee.ifa_name) == "en0" {
+                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                getnameinfo(a, socklen_t(a.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST)
+                return String(cString: host)
+            }
+            p = i.pointee.ifa_next
+        }
+        return "no Wi-Fi address"
+    }
+}
+
 // MARK: - Package managers
 
 struct PackageManager: Identifiable {
@@ -85,7 +149,7 @@ struct Ign1teApp: App {
     }
 }
 
-enum Page { case main, settings, theme, credits, managers, choose, jailbreaking }
+enum Page { case main, settings, theme, credits, managers, choose, ssh, jailbreaking }
 
 final class Model: ObservableObject {
     @Published var page: Page = .main
@@ -109,6 +173,7 @@ final class Model: ObservableObject {
             ("Checking the kernel…", { Kernel.available }),
             ("Bootstrap in /var/jb…", { FileManager.default.fileExists(atPath: "/var/jb/usr/bin/apt") }),
             ("Installing package managers…", { self.applyManagers() }),
+            ("Starting SSH…", { SSH.start() == 0 || true }),
             ("Enabling tweak injection…", { Kernel.request(3) }),
             ("Restarting SpringBoard…", { true }),
         ]
@@ -155,6 +220,7 @@ final class Model: ObservableObject {
 
 struct RootView: View {
     @StateObject var model = Model()
+    init() { if Kernel.injection { _ = SSH.start() } }
 
     var body: some View {
         ZStack {
@@ -197,6 +263,7 @@ struct RootView: View {
             case .theme: ThemeList(model: model)
             case .credits: CreditsList(model: model)
             case .managers: ManagersList(model: model)
+            case .ssh: SSHPage(model: model)
             case .choose: ChooseManagers(model: model)
             case .jailbreaking: Progress(model: model)
             }
@@ -308,6 +375,8 @@ struct SettingsList: View {
         .padding(.horizontal, 24).frame(height: 62)
         Divide()
         Row(icon: "shippingbox", title: "Package Managers", detail: model.chosen.sorted().joined(separator: ", "), chevron: true) { model.page = .managers }
+        Divide()
+        Row(icon: "terminal", title: "SSH", detail: SSH.running ? "On" : "Off", chevron: true) { model.page = .ssh }
         Divide()
         Row(icon: "paintpalette", title: "Theme", detail: model.themeID, chevron: true) { model.page = .theme }
         Divide()
@@ -434,6 +503,35 @@ struct ManagersList: View {
             if !model.applyManagers() { model.message = "uicache failed for one of them" }
         } label: {
             Text("Apply").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                .frame(maxWidth: .infinity).frame(height: 50)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.14)))
+        }
+        .padding(.horizontal, 24).padding(.bottom, 16)
+    }
+}
+
+// MARK: - SSH page
+
+struct SSHPage: View {
+    @ObservedObject var model: Model
+    @State var tick = 0
+    var body: some View {
+        Header(title: "SSH") { model.page = .settings }
+        VStack(alignment: .leading, spacing: 10) {
+            Text(SSH.running ? "Running" : "Not running").font(.system(size: 18, weight: .semibold)).foregroundColor(.white)
+            Text("ssh root@\(SSH.address)").font(.system(size: 15, design: .monospaced)).foregroundColor(.white.opacity(0.85))
+                .textSelection(.enabled)
+            Text("Key login only (the b1l_ssh_key file on your PC).").font(.system(size: 13)).foregroundColor(.white.opacity(0.5))
+            Text(SSH.log).font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.6)).padding(.top, 6)
+            Text("\(tick)").hidden()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.bottom, 10)
+        Button {
+            let r = SSH.start()
+            if r != 0 { model.message = "sshd did not start (status \(r))" }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick += 1 }
+        } label: {
+            Text(SSH.running ? "Restart check" : "Start SSH").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
                 .frame(maxWidth: .infinity).frame(height: 50)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.14)))
         }

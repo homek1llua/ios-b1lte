@@ -118,6 +118,14 @@ jobs:
           } | sudo tee -a "$st" > /dev/null
           dpkg-deb -c sileo.deb | awk '{print $6}' | sed 's|^\./|/|; s|/$||; s|^/var/jb/Applications/Sileo.app|/Applications/Sileo.app|' | grep -v '^$' | sudo tee s/var/jb/Library/dpkg/info/org.coolstar.sileo.list > /dev/null
           grep -c '^Package:' "$st"
+          # S10 build 0040: OpenSSH (Procursus) for the PC: key login only, host keys made here, started by Ign1te
+          sudo python3 scripts/jb-add-packages.py s openssh-server openssh-sftp-server openssh-client
+          sudo mkdir -p s/var/jb/etc/ssh s/var/jb/var/run s/var/jb/var/log s/var/jb/var/empty
+          sudo ssh-keygen -q -t ed25519 -N "" -f s/var/jb/etc/ssh/ssh_host_ed25519_key
+          sudo ssh-keygen -q -t rsa -b 3072 -N "" -f s/var/jb/etc/ssh/ssh_host_rsa_key
+          sudo cp userspace/ssh/sshd_config userspace/ssh/authorized_keys s/var/jb/etc/ssh/
+          sudo chown -R 0:0 s/var/jb/etc/ssh && sudo chmod 600 s/var/jb/etc/ssh/ssh_host_*_key && sudo chmod 644 s/var/jb/etc/ssh/authorized_keys
+          ls -la s/var/jb/usr/sbin/sshd s/var/jb/etc/ssh
           # S10 build 0035: Zebra, the second package manager Ign1te offers (registered with LaunchServices only when
           # chosen there, by uicache); left out if no rootless build is found
           url=$(GH_TOKEN="${{ github.token }}" gh api repos/zbrateam/Zebra/releases -q '[.[].assets[]|select(.name|test("iphoneos-arm64\\.deb$"))][0].browser_download_url' 2>/dev/null || true)
