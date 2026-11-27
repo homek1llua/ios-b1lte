@@ -1,2 +1,3 @@
-_sandbox_container_path_for_pid
-_sandbox_container_path_for_audit_token
+_sandbox_spawnattrs_setcontainer
+_sandbox_spawnattrs_getcontainer
+_sandbox_spawnattrs_init
