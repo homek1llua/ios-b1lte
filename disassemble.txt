@@ -1,0 +1,2 @@
+_sandbox_container_path_for_pid
+_sandbox_container_path_for_audit_token
