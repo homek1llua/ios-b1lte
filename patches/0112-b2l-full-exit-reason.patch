@@ -1,8 +1,8 @@
 diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
-index 452467b..241acf9 100644
+index 452467b..f193fff 100644
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
-@@ -2060,7 +2060,17 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
+@@ -2060,7 +2060,20 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
  	    p != current_proc() || (!rv && !ut->uu_exception)) return;
  	for (slot = 0; slot < 14; slot++)
  		if (!strncmp(p->p_comm, names[slot], strlen(names[slot]))) break;
@@ -12,7 +12,10 @@ index 452467b..241acf9 100644
 +	 * 64 crashes a boot at most */
 +	static unsigned b2l_other_crashes;
 +	if (slot == 14) {
-+		if (__atomic_fetch_add(&b2l_other_crashes, 1, __ATOMIC_RELAXED) >= 64) return;
++		/* S10 build 0040: xpcproxy and BlastDoor exits used up the budget before Files crashed */
++		if (!strcmp(p->p_comm, "xpcproxy") || !strncmp(p->p_comm, "MessagesBlastDoo", 16) ||
++		    !strcmp(p->p_comm, "analyticsd") || !strcmp(p->p_comm, "mediaplaybackd")) return;
++		if (__atomic_fetch_add(&b2l_other_crashes, 1, __ATOMIC_RELAXED) >= 128) return;
 +	} else
 +#else
 +	if (slot == 14) return;
@@ -21,7 +24,27 @@ index 452467b..241acf9 100644
  	const char *desc = exit_reason_get_string_desc(p->p_exit_reason);
  	b2l_early_trace("B2L CRASH: %s[%d] status=0x%x exception=%u code=0x%llx sub=0x%llx\n",
  	    p->p_comm, proc_getpid(p), rv, ut->uu_exception,
-@@ -2182,6 +2192,19 @@ proc_prepareexit(proc_t p, int rv, boolean_t perf_notify)
+@@ -2083,11 +2096,15 @@ b2l_trace_crash(proc_t p, int rv, struct uthread *ut)
+ 		if (fp && fp <= UINT64_MAX - 16 && !copyin((user_addr_t)(fp + 16), &arg, sizeof(arg)))
+ 			b2l_trace_crash_text(proc_getpid(p), "frame_arg", arg);
+ 	}
+-	uintptr_t bt[12];
++	uintptr_t bt[24];
+ 	struct backtrace_user_info info = BTUINFO_INIT;
+-	unsigned frames = backtrace_user(bt, 12, NULL, &info);
+-	b2l_early_trace("B2L BT: pid=%d frames=%u error=%d\n", proc_getpid(p), frames, info.btui_error);
+-	for (unsigned i = 0; i < frames && i < 12; i++)
++	unsigned frames = backtrace_user(bt, 24, NULL, &info);
++	{
++		extern uint64_t b2l_task_shared_cache_slide(task_t);
++		b2l_early_trace("B2L BT: pid=%d frames=%u error=%d shared_cache_slide=0x%llx\n", proc_getpid(p), frames,
++		    info.btui_error, b2l_task_shared_cache_slide(proc_task(p)));
++	}
++	for (unsigned i = 0; i < frames && i < 24; i++)
+ 		b2l_early_trace("B2L BT: pid=%d frame=%u pc=0x%llx\n", proc_getpid(p), i, (uint64_t)bt[i]);
+ }
+ #endif
+@@ -2182,6 +2199,19 @@ proc_prepareexit(proc_t p, int rv, boolean_t perf_notify)
  				    "pid: %d -- process name: %s -- exit reason namespace: %d -- subcode: 0x%llx -- description: %s",
  				    proc_getpid(p), proc_name, p->p_exit_reason->osr_namespace, p->p_exit_reason->osr_code,
  				    exit_reason_get_string_desc(p->p_exit_reason));

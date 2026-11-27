@@ -1,0 +1,24 @@
+diff --git a/osfmk/vm/vm_shared_region.c b/osfmk/vm/vm_shared_region.c
+index 3924c1d..79cdad2 100644
+--- a/osfmk/vm/vm_shared_region.c
++++ b/osfmk/vm/vm_shared_region.c
+@@ -4118,3 +4118,19 @@ vm_shared_region_root_dir(
+ 	vm_shared_region_unlock();
+ 	return vnode;
+ }
++
++#if defined(ARM64_BOARD_CONFIG_B2L)
++/* S10 build 0040: a task's shared cache slide, so crash backtraces (kern_exit.c) can be symbolicated offline */
++uint64_t b2l_task_shared_cache_slide(task_t task);
++uint64_t
++b2l_task_shared_cache_slide(task_t task)
++{
++	vm_shared_region_t sr = vm_shared_region_get(task);
++	uint64_t slide = UINT64_MAX;
++	if (sr != NULL) {
++		slide = sr->sr_slide;
++		vm_shared_region_deallocate(sr);
++	}
++	return slide;
++}
++#endif

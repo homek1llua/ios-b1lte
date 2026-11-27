@@ -11,6 +11,7 @@
 #include <arm64/b2l_arm64e_compat.h>
 #include <sys/codesign.h>
 #include <os/atomic_private.h>
+#include <sys/proc.h>
 #endif
 #include "B2LMemoryIO.h"
 extern "C" {
@@ -24,8 +25,10 @@ static void b2l_aks_log(uint32_t selector,IOReturn result)
     static uint32_t count;uint32_t n=os_atomic_load(&count,relaxed);
     static uint32_t fails;
     /* B1L-0206: failures keep a budget of their own, to see which selectors iOS still needs */
-    if(result!=kIOReturnSuccess&&os_atomic_inc_orig(&fails,relaxed)<64){
-        IOLog("B2L AKS: selector=%u result=0x%x\n",selector,(unsigned)result);return;
+    /* S10 build 0040: with the caller's name (Files, the photo picker), 200 failures a boot */
+    if(result!=kIOReturnSuccess&&os_atomic_inc_orig(&fails,relaxed)<200){
+        char who[32];proc_selfname(who,sizeof(who));
+        IOLog("B2L AKS: %s selector=%u result=0x%x\n",who,selector,(unsigned)result);return;
     }
     while(n<24){
         if(os_atomic_cmpxchgv(&count,n,n+1,&n,relaxed)){
